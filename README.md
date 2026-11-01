@@ -1,0 +1,85 @@
+# CoBench
+
+*Version française : [README.fr.md](README.fr.md)*
+
+A FreeCAD workbench to work on one project with other people. Put the project's
+`.FCStd` files in any shared folder: a network share, or a folder synchronised by
+Nextcloud, Dropbox, Google Drive, OneDrive, Syncthing... CoBench does not depend
+on any of them.
+
+- **Locks.** Editing a part locks it. Everybody else sees who edits it, and the file is
+  read-only on their computer until it is released. Closing the part releases it.
+- **Panel.** Every part of the project with its preview, its state (free, edited by you,
+  locked by someone), who saved it last and which parts use it.
+- **Assembly view.** In an assembly, parts edited by someone else are boxed in red with
+  the person's name, yours in green. Double-click a part in the 3D view to edit its file.
+
+FreeCAD 1.0 or later. English and French.
+
+## Install
+
+Until CoBench is in the Addon Manager catalogue, copy this folder into FreeCAD's
+`Mod` folder and restart FreeCAD:
+
+| System  | Folder |
+|---------|--------|
+| Windows | `%APPDATA%\FreeCAD\Mod\CoBench` (FreeCAD 1.0) or `%APPDATA%\FreeCAD\v1-1\Mod\CoBench` (1.1) |
+| Linux   | `~/.local/share/FreeCAD/Mod/CoBench` (`.../v1-1/Mod/CoBench` for 1.1) |
+| macOS   | `~/Library/Application Support/FreeCAD/Mod/CoBench` (`.../v1-1/Mod/CoBench` for 1.1) |
+
+With git: `git clone https://github.com/LMGerard/CoBench` in that `Mod` folder.
+
+## Use
+
+1. Select the **CoBench** workbench. Set your name with *CoBench > My name and options*:
+   it is what others see on your locks.
+2. *Open project folder* and pick the folder holding the parts. CoBench writes a small
+   `cobench.json` there (project name and central assembly). If one part links to the
+   others, it becomes the central assembly (★); right-click a part to choose another.
+3. Double-click a part (or *Edit*) to lock and open it. Work, save, close: the lock is
+   released when you close the document, or with *Release*.
+4. *Open central assembly* shows who works on what. Double-click a part in the 3D view,
+   or select it and use *Edit part* (also in the right-click menu), to edit its file.
+
+Once the workbench has been loaded, locks are handled in every workbench: closing a part
+releases it, and saving a free part of a project you have not locked locks it.
+
+### What the colours mean
+
+| Colour | Meaning |
+|--------|---------|
+| grey   | free |
+| green  | you are editing it |
+| red    | someone else is editing it (name and machine shown) |
+| orange | your own lock left by a FreeCAD that closed without releasing it |
+
+## How it works
+
+`Part.FCStd` is locked by a file `Part.FCStd.cobench-lock` next to it, holding the
+name, the computer and the time. It travels with the part through any sync tool.
+The name does not start with a dot or `~` because sync clients skip such files.
+
+- A lock left by a crash on your own computer is taken back silently next time.
+- Someone else's lock can be taken with *Take the lock*, after a warning.
+- If the file changed on disk since you opened it, CoBench reloads it before you edit,
+  and warns you if you save over a newer version.
+- Conflict copies made by the sync client are listed in the panel.
+
+**Limit:** with a synchronised folder, two people who open the same part within the
+synchronisation delay will not see each other's lock. On a network share the lock is
+immediate.
+
+Nothing is written into your FreeCAD documents: the coloured boxes exist only in the
+3D view.
+
+## Tests
+
+The lock, project and file logic does not need FreeCAD:
+
+```
+python -m pytest tests
+```
+
+## Licence
+
+LGPL-2.1-or-later, like FreeCAD.
