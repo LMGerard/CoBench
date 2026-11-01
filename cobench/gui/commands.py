@@ -215,7 +215,7 @@ COMMANDS = {
 }
 
 TOOLBAR = ["CoBench_ShowPanel", "CoBench_OpenProject", "CoBench_OpenAssembly",
-           "CoBench_EditPart", "CoBench_ReleasePart"]
+           "CoBench_EditPart", "CoBench_ReleasePart", "CoBench_SplitDocument"]
 MENU = ["CoBench_ShowPanel", "CoBench_OpenProject", "CoBench_OpenAssembly", "CoBench_SetAssembly",
         "Separator", "CoBench_EditPart", "CoBench_ReleasePart", "CoBench_ReleaseAll",
         "Separator", "CoBench_SplitDocument", "Separator", "CoBench_Settings"]
