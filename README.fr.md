@@ -13,6 +13,10 @@ dépend d'aucun d'eux.
 - **Vue assemblage.** Dans un assemblage, les pièces modifiées par quelqu'un d'autre sont
   encadrées en rouge avec son nom, les vôtres en vert. Double-cliquez une pièce dans la vue
   3D pour modifier son fichier.
+- **Découper en pièces.** Transforme un document qui contient plusieurs corps en un fichier
+  par pièce, un `Variables.FCStd` avec tous les VarSets et tableurs (les pièces continuent à
+  les lire : changer une cote met tout à jour) et un `Assemblage.FCStd` qui relie les pièces
+  à leur place. Le fichier d'origine n'est pas modifié.
 
 FreeCAD 1.0 ou plus récent. Interface en français et en anglais (suit la langue de FreeCAD).
 

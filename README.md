@@ -13,6 +13,10 @@ on any of them.
   locked by someone), who saved it last and which parts use it.
 - **Assembly view.** In an assembly, parts edited by someone else are boxed in red with
   the person's name, yours in green. Double-click a part in the 3D view to edit its file.
+- **Split into part files.** Turns one document holding many bodies into one file per part,
+  a `Variables.FCStd` with every VarSet and spreadsheet (parts keep reading them, so changing
+  a value still updates everything) and an `Assemblage.FCStd` linking the parts in place.
+  The original file is not modified.
 
 FreeCAD 1.0 or later. English and French.
 

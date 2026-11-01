@@ -134,6 +134,22 @@ class ReleaseAll(_Command):
                 break
 
 
+class SplitDocument(_Command):
+    icon = "split"
+    menu = "Split into part files..."
+    tip = ("One file per part, shared variables in Variables.FCStd and links in Assemblage.FCStd "
+           "(the original file is not modified)")
+
+    def IsActive(self):
+        doc = App.ActiveDocument
+        return bool(doc and doc.FileName)
+
+    def Activated(self):
+        from . import split
+        split.split_active(start())
+        panel.show_panel()
+
+
 class Settings(_Command):
     icon = "user"
     menu = "My name and options..."
@@ -194,6 +210,7 @@ COMMANDS = {
     "CoBench_EditPart": EditPart(),
     "CoBench_ReleasePart": ReleasePart(),
     "CoBench_ReleaseAll": ReleaseAll(),
+    "CoBench_SplitDocument": SplitDocument(),
     "CoBench_Settings": Settings(),
 }
 
@@ -201,7 +218,7 @@ TOOLBAR = ["CoBench_ShowPanel", "CoBench_OpenProject", "CoBench_OpenAssembly",
            "CoBench_EditPart", "CoBench_ReleasePart"]
 MENU = ["CoBench_ShowPanel", "CoBench_OpenProject", "CoBench_OpenAssembly", "CoBench_SetAssembly",
         "Separator", "CoBench_EditPart", "CoBench_ReleasePart", "CoBench_ReleaseAll",
-        "Separator", "CoBench_Settings"]
+        "Separator", "CoBench_SplitDocument", "Separator", "CoBench_Settings"]
 
 
 def register():

@@ -108,6 +108,30 @@ FR = {
     "{name} had been saved by someone else after you opened it. Your save replaced their version.":
         "{name} avait été enregistrée par quelqu'un d'autre après votre ouverture. Votre "
         "enregistrement a remplacé sa version.",
+    "Split into part files...": "Découper en pièces...",
+    "One file per part, shared variables in Variables.FCStd and links in Assemblage.FCStd "
+    "(the original file is not modified)":
+        "Un fichier par pièce, variables partagées dans Variables.FCStd et liens dans "
+        "Assemblage.FCStd (le fichier d'origine n'est pas modifié)",
+    "Save the document first.": "Enregistrez d'abord le document.",
+    "Save the document first: the split uses the saved file.":
+        "Enregistrez d'abord le document : le découpage part du fichier enregistré.",
+    "The folder {folder} is not empty.": "Le dossier {folder} n'est pas vide.",
+    "Close the document named {name} first.": "Fermez d'abord le document nommé {name}.",
+    "No part found (PartDesign bodies, App::Part or solids).":
+        "Aucune pièce trouvée (corps PartDesign, App::Part ou solides).",
+    "Could not keep the names of: {names}": "Impossible de garder les noms de : {names}",
+    "{count} variable sets in {file}": "{count} ensembles de variables dans {file}",
+    "{part} uses {others}: a copy of them is inside its file.":
+        "{part} utilise {others} : une copie se trouve dans son fichier.",
+    "{part}: {count} expressions could not be restored.":
+        "{part} : {count} expressions n'ont pas pu être rétablies.",
+    "{count} parts written.": "{count} pièces écrites.",
+    "Central assembly: {file}": "Assemblage central : {file}",
+    "Where to create the folder of parts?": "Où créer le dossier des pièces ?",
+    "Split {name} into one file per part in:\n{folder}\n\nThe original file is not modified.":
+        "Découper {name} en un fichier par pièce dans :\n{folder}\n\nLe fichier d'origine "
+        "n'est pas modifié.",
 }
 
 CATALOGS = {"French": FR}
