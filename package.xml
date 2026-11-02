@@ -2,7 +2,7 @@
 <package format="1" xmlns="https://wiki.freecad.org/Package_Metadata">
   <name>CoBench</name>
   <description>Work on a FreeCAD project with other people: lock a part while you edit it, see who works on what in a list with previews or directly in the assembly. Works with any shared or synchronised folder (network share, Nextcloud, Dropbox, Google Drive, Syncthing...).</description>
-  <version>0.4.5</version>
+  <version>0.4.6</version>
   <date>2026-11-02</date>
   <maintainer email="LMGerard@users.noreply.github.com">LMGerard</maintainer>
   <author>LMGerard</author>

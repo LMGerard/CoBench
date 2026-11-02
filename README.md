@@ -13,9 +13,10 @@ on any of them.
   locked by someone), who saved it last and which parts use it.
 - **Assembly view.** In an assembly, parts edited by someone else get a dashed red box with
   the person's name, yours a green one (yellow while your lock has not reached the others).
-  Hovering a part lights the whole part up; clicking it opens a small menu: open read-only,
-  edit or ask for it, show in the panel. Faces and edges are not selectable there, unless you
-  have locked the assembly itself.
+  In any project file that links to several other files and that you have not locked
+  (read-only), hovering a part lights the whole part up and clicking it opens a small menu:
+  open read-only, edit or ask for it, show in the panel. Faces and edges are not selectable
+  there; lock the file to select them again.
 - **Split into part files.** Turns one document holding many bodies into one file per part,
   a `Variables.FCStd` with every VarSet and spreadsheet (parts keep reading them, so changing
   a value still updates everything) and an `Assemblage.FCStd` linking the parts in place.

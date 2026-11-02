@@ -112,6 +112,19 @@ def assembly_links(doc, project_contains):
     return found
 
 
+def reference_count(doc, project_contains):
+    """Number of links of ``doc`` to other files of the project, shown or hidden."""
+    own = _norm(doc.FileName) if doc.FileName else None
+    count = 0
+    for obj in doc.Objects:
+        if not hasattr(obj, "LinkedObject"):
+            continue
+        path = linked_file(obj)
+        if path and _norm(path) != own and project_contains(path):
+            count += 1
+    return count
+
+
 def _shown(obj):
     """False if the object or one of the containers above it is hidden."""
     if not getattr(obj, "Visibility", True):
@@ -316,7 +329,7 @@ class AssemblyWatcher:
         self.panel_getter = panel_getter
         self.overlays = {}      # document name -> Overlay
         self.dirty = set()
-        self.link_cache = {}    # document name -> (object count, links)
+        self.link_cache = {}    # document name -> (object count, links, references)
         self.highlights = {}    # (document, top object, subname) -> coin node or None
         self.marker = coin.SoInfo() if coin is not None else None  # marks views already hooked
         if self.marker is not None:
@@ -343,8 +356,12 @@ class AssemblyWatcher:
         self.highlights.clear()
 
     def picking(self, doc_name):
-        """True for an assembly of the project that I have not locked."""
+        """True for a project file that holds several references to other
+        files of the project and that I have not locked (read-only)."""
         if not prefs.assembly_picking() or doc_name not in self.overlays:
+            return False
+        cached = self.link_cache.get(doc_name)
+        if cached is None or cached[2] < 2:
             return False
         try:
             doc = App.getDocument(doc_name)
@@ -374,7 +391,8 @@ class AssemblyWatcher:
             cached = self.link_cache.get(name)
             key = len(doc.Objects)
             if cached is None or cached[0] != key or name in self.dirty:
-                cached = self.link_cache[name] = (key, assembly_links(doc, self._contains))
+                cached = self.link_cache[name] = (key, assembly_links(doc, self._contains),
+                                                   reference_count(doc, self._contains))
             links = cached[1]
             if not links:
                 if name in self.overlays:
@@ -420,7 +438,8 @@ class AssemblyWatcher:
             return
         try:
             if wanted:
-                Gui.Selection.addSelectionGate(self.gate)  # again each time: another one may have replaced it
+                # again each time: another one may have replaced it
+                _add_gate(self.gate)
                 self.gate_on = True
             elif self.gate_on:
                 Gui.Selection.removeSelectionGate()
@@ -593,6 +612,16 @@ class _Gate:
             return not self.watcher.picking(doc.Name)
         except Exception:
             return True
+
+
+def _add_gate(gate):
+    """Install the gate so that it is asked about the document where the click
+    happens (the assembly), not about the file of the linked part: FreeCAD
+    resolves links before asking a gate unless told not to (resolve = 0)."""
+    try:
+        Gui.Selection.addSelectionGate(gate, 0)
+    except TypeError:  # older FreeCAD: no resolve argument
+        Gui.Selection.addSelectionGate(gate)
 
 
 def _viewport(view):

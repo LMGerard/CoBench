@@ -12,9 +12,11 @@ dépend d'aucun d'eux.
   vous, verrouillée par quelqu'un), qui l'a enregistrée en dernier et où elle est utilisée.
 - **Vue assemblage.** Dans un assemblage, les pièces modifiées par quelqu'un d'autre ont un
   cadre rouge en pointillés avec son nom, les vôtres un cadre vert (jaune tant que votre verrou
-  n'est pas parvenu aux autres). Au survol, toute la pièce s'éclaire ; un clic ouvre un petit
-  menu : ouvrir en lecture seule, modifier ou demander, voir dans le panneau. Les faces et
-  arêtes n'y sont pas sélectionnables, sauf si vous avez verrouillé l'assemblage lui-même.
+  n'est pas parvenu aux autres). Dans tout fichier du projet qui contient plusieurs liens vers
+  d'autres fichiers et que vous n'avez pas verrouillé (lecture seule), toute la pièce s'éclaire
+  au survol et un clic ouvre un petit menu : ouvrir en lecture seule, modifier ou demander, voir
+  dans le panneau. Les faces et arêtes n'y sont pas sélectionnables ; verrouillez le fichier
+  pour les sélectionner à nouveau.
 - **Découper en pièces.** Transforme un document qui contient plusieurs corps en un fichier
   par pièce, un `Variables.FCStd` avec tous les VarSets et tableurs (les pièces continuent à
   les lire : changer une cote met tout à jour) et un `Assemblage.FCStd` qui relie les pièces
