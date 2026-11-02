@@ -351,10 +351,14 @@ COMMANDS = {
     "CoBench_Settings": Settings(),
 }
 
-TOOLBAR = ["CoBench_ShowPanel", "CoBench_OpenProject", "Separator",
-           "CoBench_OpenAssembly", "CoBench_ShowGraph", "Separator",
-           "CoBench_Lock", "Separator",
-           "CoBench_SplitDocument"]
+# One toolbar per group: FreeCAD draws separators very faintly with some themes,
+# separate toolbars are clearly apart (and each can be moved).
+TOOLBARS = [
+    ("CoBench", ["CoBench_ShowPanel", "CoBench_OpenProject"]),
+    ("CoBench views", ["CoBench_OpenAssembly", "CoBench_ShowGraph"]),
+    ("CoBench lock", ["CoBench_Lock"]),
+    ("CoBench tools", ["CoBench_SplitDocument"]),
+]
 MENU = ["CoBench_ShowPanel", "CoBench_OpenProject", "CoBench_OpenAssembly", "CoBench_SetAssembly",
         "CoBench_ShowGraph", "Separator", "CoBench_EditPart", "CoBench_AskForPart",
         "CoBench_ReleasePart", "CoBench_ReleaseAll",

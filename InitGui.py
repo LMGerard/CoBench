@@ -19,7 +19,8 @@ class CoBenchWorkbench(Gui.Workbench):
         from cobench.gui import commands
         from cobench.i18n import tr
         commands.register()
-        self.appendToolbar("CoBench", commands.TOOLBAR)
+        for name, items in commands.TOOLBARS:
+            self.appendToolbar(name, items)
         self.appendMenu("CoBench", commands.MENU)
         commands.start()
         self._tr = tr

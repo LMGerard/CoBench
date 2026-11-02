@@ -462,7 +462,8 @@ class Session:
     # -- is my lock sent? ----------------------------------------------------
     def lock_pending(self, path):
         """True while the lock I hold on path may not have reached the others."""
-        return self.locks.holds(path) and path not in self._lock_sent
+        # locks.held keeps normalised paths (lower case on Windows): compare the same way.
+        return self.locks.holds(path) and _norm(path) not in self._lock_sent
 
     def _check_lock_sync(self):
         held = set(self.locks.held)
