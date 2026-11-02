@@ -329,7 +329,7 @@ class AssemblyWatcher:
         self.panel_getter = panel_getter
         self.overlays = {}      # document name -> Overlay
         self.dirty = set()
-        self.link_cache = {}    # document name -> (object count, links, references)
+        self.link_cache = {}    # document name -> ((object count, references), links, references)
         self.highlights = {}    # (document, top object, subname) -> coin node or None
         self.marker = coin.SoInfo() if coin is not None else None  # marks views already hooked
         if self.marker is not None:
@@ -389,10 +389,12 @@ class AssemblyWatcher:
             if not doc.FileName or not self._contains(doc.FileName):
                 continue
             cached = self.link_cache.get(name)
-            key = len(doc.Objects)
+            # The references count in the key: while a file opens, its links
+            # only resolve once the part files they point to are loaded.
+            refs = reference_count(doc, self._contains)
+            key = (len(doc.Objects), refs)
             if cached is None or cached[0] != key or name in self.dirty:
-                cached = self.link_cache[name] = (key, assembly_links(doc, self._contains),
-                                                   reference_count(doc, self._contains))
+                cached = self.link_cache[name] = (key, assembly_links(doc, self._contains), refs)
             links = cached[1]
             if not links:
                 if name in self.overlays:
