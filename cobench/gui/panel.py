@@ -20,14 +20,15 @@ COLORS = {
     locks.MINE: QtGui.QColor(46, 160, 67),
     locks.OTHER: QtGui.QColor(208, 52, 44),
     locks.ORPHAN: QtGui.QColor(230, 140, 20),
+    session_mod.PENDING: QtGui.QColor(227, 178, 43),
 }
 
 
-def status_text(state):
+def status_text(state, pending=False):
     if state.status == locks.FREE:
         return tr("free")
     if state.status == locks.MINE:
-        return tr("you are editing")
+        return tr("you are editing (lock being sent)") if pending else tr("you are editing")
     if state.status == locks.ORPHAN:
         return tr("your old lock (FreeCAD closed)")
     return tr("locked by {user}", user=state.info.user if state.info else "?")
@@ -251,6 +252,15 @@ class PartsPanel(QtWidgets.QWidget):
         self._apply_filter()
         self._show_details()
 
+    def _key(self, path, state):
+        """Colour key: the lock status, or PENDING while my lock is not sent yet."""
+        if state.status == locks.MINE and self.session.lock_pending(path):
+            return session_mod.PENDING
+        return state.status
+
+    def _text(self, path, state):
+        return status_text(state, self._key(path, state) == session_mod.PENDING)
+
     def _label(self, path):
         project = self.session.project
         name = _stem(path)
@@ -274,9 +284,9 @@ class PartsPanel(QtWidgets.QWidget):
                 item.setData(PATH_ROLE, path)
                 self.grid.insertItem(index, item)
                 self.grid_items[path] = item
-            item.setText("%s\n%s" % (self._label(path), status_text(state)))
+            item.setText("%s\n%s" % (self._label(path), self._text(path, state)))
             item.setIcon(self._icon(path, state))
-            item.setForeground(COLORS[state.status] if state.status != locks.FREE
+            item.setForeground(COLORS[self._key(path, state)] if state.status != locks.FREE
                                else self.palette().text().color())
             item.setToolTip(self._tooltip(path, state))
 
@@ -319,9 +329,9 @@ class PartsPanel(QtWidgets.QWidget):
                     parent.addChild(item)
                 self.tree_items[path] = item
             item.setText(0, self._label(path))
-            item.setText(1, status_text(state))
+            item.setText(1, self._text(path, state))
             item.setIcon(0, self._icon(path, state))
-            color = COLORS[state.status] if state.status != locks.FREE else self.palette().text().color()
+            color = COLORS[self._key(path, state)] if state.status != locks.FREE else self.palette().text().color()
             item.setForeground(0, color)
             item.setForeground(1, color)
             tip = self._tooltip(path, state)
@@ -336,7 +346,7 @@ class PartsPanel(QtWidgets.QWidget):
         self.tree.sortItems(0, Qt.AscendingOrder)
 
     def _tooltip(self, path, state):
-        tip = [self.session.project.rel(path), status_text(state)]
+        tip = [self.session.project.rel(path), self._text(path, state)]
         if state.info:
             tip.append(session_mod.describe_lock(state.info))
         tags = self.session.project.tags_of(path)
@@ -346,7 +356,8 @@ class PartsPanel(QtWidgets.QWidget):
 
     def _icon(self, path, state):
         part = fcstd.read_part(path)
-        key = (part.thumbnail is not None and len(part.thumbnail), _mtime(path), state.status)
+        status = self._key(path, state)
+        key = (part.thumbnail is not None and len(part.thumbnail), _mtime(path), status)
         cached = self._icon_cache.get(path)
         if cached and cached[0] == key:
             return cached[1]
@@ -363,7 +374,7 @@ class PartsPanel(QtWidgets.QWidget):
         if not image.isNull():
             image = image.scaled(size - 8, size - 8, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             painter.drawPixmap((size - image.width()) // 2, (size - image.height()) // 2, image)
-        color = COLORS[state.status]
+        color = COLORS[status]
         if state.status != locks.FREE:
             pen = QtGui.QPen(color)
             pen.setWidth(5)
@@ -387,7 +398,7 @@ class PartsPanel(QtWidgets.QWidget):
         def visible(path):
             if project is None:
                 return True
-            haystack = (project.rel(path) + " " + status_text(self.session.state(path))).lower()
+            haystack = (project.rel(path) + " " + self._text(path, self.session.state(path))).lower()
             part_tags = [t.lower() for t in project.tags_of(path)]
             return (all(t in haystack for t in texts)
                     and all(any(tag in pt for pt in part_tags) for tag in tags))
@@ -474,9 +485,9 @@ class PartsPanel(QtWidgets.QWidget):
         project = self.session.project
         state = self.session.state(path)
         part = fcstd.read_part(path)
-        color = COLORS[state.status].name()
+        color = COLORS[self._key(path, state)].name()
         lines = ["<b>%s</b>" % _escape(project.rel(path)),
-                 "<span style='color:%s'>&#9679;</span> %s" % (color, _escape(status_text(state)))]
+                 "<span style='color:%s'>&#9679;</span> %s" % (color, _escape(self._text(path, state)))]
         if state.info:
             lines.append(_escape(session_mod.describe_lock(state.info)))
         request = requests.Request.read(path)

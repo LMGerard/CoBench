@@ -80,6 +80,13 @@ The name does not start with a dot or `~` because sync clients skip such files.
   and warns you if you save over a newer version.
 - Conflict copies made by the sync client are listed in the panel.
 
+**Offline.** CoBench refuses to lock a part while the computer is offline (*Take it anyway*
+is still possible). After locking, the padlock stays yellow until the lock has left, then turns
+green: you can go offline. On Windows, CoBench reads the state published by the sync client
+(OneDrive, Nextcloud with virtual files...); elsewhere it waits until the computer has stayed
+online a few seconds (10 s, adjustable). On each save, `Part.FCStd.cobench-stamp` records who
+saved and the file's fingerprint: if your copy is older when you take the part, CoBench says so.
+
 **Limit:** with a synchronised folder, two people who open the same part within the
 synchronisation delay will not see each other's lock. On a network share the lock is
 immediate.

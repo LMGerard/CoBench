@@ -7,7 +7,7 @@ import FreeCADGui as Gui
 from ..core import locks
 from ..i18n import tr
 from . import assembly, panel, prefs, session as session_mod
-from .qt import QtWidgets
+from .qt import QtGui, QtWidgets
 
 _watcher = None
 _tree = None
@@ -138,6 +138,81 @@ class EditPart(_Command):
         session.edit(path)
 
 
+LOCK_LOOKS = {
+    # display status -> (icon, menu text, tooltip)
+    None: ("lock_none", "Lock", "Select a part of the project to lock or release it"),
+    locks.FREE: ("lock_free", "Lock and edit",
+                 "Free: lock the selected part (or the active document) and open it"),
+    session_mod.PENDING: ("lock_pending", "Release",
+                          "You are editing it; the lock is being sent (wait before going offline). "
+                          "Click to release it"),
+    locks.MINE: ("lock_mine", "Release", "You are editing it. Click to release it"),
+    locks.OTHER: ("lock_other", "Ask for it", "Locked by someone else. Click to ask for it"),
+    locks.ORPHAN: ("lock_orphan", "Take back", "Your own lock left by a FreeCAD that closed. Click to take it back"),
+}
+
+
+def lock_target():
+    """(part path, display status) for the lock button."""
+    session = session_mod.get()
+    path = assembly.selected_part(session)
+    if not path:
+        return None, None
+    state = session.locks.state(path)
+    if state.status == locks.MINE and session.lock_pending(path):
+        return path, session_mod.PENDING
+    return path, state.status
+
+
+class LockToggle(_Command):
+    """One padlock: its colour is the state of the selected part, a click does the right thing."""
+    icon = "lock_free"
+    menu = "Lock and edit"
+    tip = "Free: lock the selected part (or the active document) and open it"
+
+    def __init__(self):
+        self._shown = "unset"
+
+    def IsActive(self):
+        try:
+            path, status = lock_target()
+        except Exception:
+            path, status = None, None
+        self._show(status)
+        return path is not None
+
+    def _show(self, status):
+        if status == self._shown:
+            return
+        try:
+            actions = Gui.Command.get("CoBench_Lock").getAction()
+        except Exception:
+            return
+        icon_name, menu, tip = LOCK_LOOKS[status]
+        icon = QtGui.QIcon(panel.icon_path(icon_name))
+        if not actions:
+            return  # toolbar not built yet: try again at the next check
+        for action in actions:
+            action.setIcon(icon)
+            action.setText(tr(menu))
+            action.setToolTip(tr(tip))
+            action.setStatusTip(tr(tip))
+        self._shown = status
+
+    def Activated(self):
+        session = start()
+        path, status = lock_target()
+        if path is None:
+            return
+        if status in (locks.MINE, session_mod.PENDING):
+            session.release(path)
+        elif status == locks.OTHER:
+            session.edit(path)  # offers: ask for it, open read-only, take the lock
+        else:
+            session.edit(path)
+        self._shown = "unset"
+
+
 class ReleasePart(_Command):
     icon = "release"
     menu = "Release part"
@@ -222,6 +297,15 @@ class SettingsDialog(QtWidgets.QDialog):
         self.hide = QtWidgets.QCheckBox(tr("Hide from the tree the files an assembly loads"))
         self.hide.setChecked(prefs.hide_dependencies())
         form.addRow(self.hide)
+        self.offline = QtWidgets.QCheckBox(tr("Refuse to lock a part when this computer is offline"))
+        self.offline.setChecked(prefs.offline_check())
+        form.addRow(self.offline)
+        self.delay = QtWidgets.QSpinBox()
+        self.delay.setRange(1, 600)
+        self.delay.setSuffix(" s")
+        self.delay.setValue(prefs.sync_delay())
+        self.delay.setToolTip(tr("Used when the sync client does not say whether the lock was sent"))
+        form.addRow(tr("A lock counts as sent after staying online:"), self.delay)
         host = QtWidgets.QLabel(tr("Computer: {host}", host=session.identity.host))
         host.setEnabled(False)
         form.addRow(host)
@@ -242,6 +326,8 @@ class SettingsDialog(QtWidgets.QDialog):
         prefs.set_auto_reload(self.reload.isChecked())
         prefs.set_notifications(self.notifications.isChecked())
         prefs.set_hide_dependencies(self.hide.isChecked())
+        prefs.set_offline_check(self.offline.isChecked())
+        prefs.set_sync_delay(self.delay.value())
         if not self.protect.isChecked() and self.session.project:
             for part in self.session.project.parts():
                 if locks.is_read_only(part):
@@ -255,6 +341,7 @@ COMMANDS = {
     "CoBench_OpenProject": OpenProject(),
     "CoBench_OpenAssembly": OpenAssembly(),
     "CoBench_SetAssembly": SetAssembly(),
+    "CoBench_Lock": LockToggle(),
     "CoBench_EditPart": EditPart(),
     "CoBench_ReleasePart": ReleasePart(),
     "CoBench_ReleaseAll": ReleaseAll(),
@@ -264,8 +351,10 @@ COMMANDS = {
     "CoBench_Settings": Settings(),
 }
 
-TOOLBAR = ["CoBench_ShowPanel", "CoBench_OpenProject", "CoBench_OpenAssembly", "CoBench_ShowGraph",
-           "CoBench_EditPart", "CoBench_ReleasePart", "CoBench_SplitDocument"]
+TOOLBAR = ["CoBench_ShowPanel", "CoBench_OpenProject", "Separator",
+           "CoBench_OpenAssembly", "CoBench_ShowGraph", "Separator",
+           "CoBench_Lock", "Separator",
+           "CoBench_SplitDocument"]
 MENU = ["CoBench_ShowPanel", "CoBench_OpenProject", "CoBench_OpenAssembly", "CoBench_SetAssembly",
         "CoBench_ShowGraph", "Separator", "CoBench_EditPart", "CoBench_AskForPart",
         "CoBench_ReleasePart", "CoBench_ReleaseAll",

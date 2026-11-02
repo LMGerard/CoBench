@@ -87,6 +87,14 @@ synchronisation ignorent ces fichiers.
   plus récente.
 - Les copies en conflit créées par la synchronisation sont signalées dans le panneau.
 
+**Hors ligne.** CoBench refuse de verrouiller une pièce quand l'ordinateur est hors ligne
+(*Prendre quand même* reste possible). Après la prise, le cadenas est jaune tant que le
+verrou n'est pas parti, puis vert : vous pouvez alors couper Internet. Sous Windows, CoBench
+lit l'état donné par le client de synchro (OneDrive, Nextcloud en fichiers virtuels...) ;
+ailleurs, il attend que l'ordinateur soit resté en ligne quelques secondes (10 s, réglable).
+À chaque enregistrement, `Piece.FCStd.cobench-stamp` note qui a enregistré et l'empreinte du
+fichier : si votre copie est plus ancienne quand vous prenez la pièce, CoBench vous le dit.
+
 **Limite :** avec un dossier synchronisé, deux personnes qui ouvrent la même pièce dans le
 délai de synchronisation ne verront pas le verrou de l'autre. Sur un partage réseau, le
 verrou est immédiat.

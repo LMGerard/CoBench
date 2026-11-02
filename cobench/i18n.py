@@ -238,6 +238,52 @@ FR = {
         '{user} a pris {name}.',
     '{user} would like to edit {name}.':
         '{user} voudrait modifier {name}.',
+    'A lock counts as sent after staying online:':
+        'Un verrou est considéré comme envoyé après être resté en ligne :',
+    'Edit this copy anyway':
+        'Modifier cette copie quand même',
+    'Free: lock the selected part (or the active document) and open it':
+        "Libre : verrouiller la pièce sélectionnée (ou le document actif) et l'ouvrir",
+    'Lock and edit':
+        'Verrouiller et modifier',
+    'Lock on {name} sent: you can go offline.':
+        'Verrou de {name} envoyé : vous pouvez vous déconnecter.',
+    'Offline: the lock on {name} may not have reached the others yet.':
+        "Hors ligne : le verrou de {name} n'est peut-être pas encore arrivé chez les autres.",
+    'Refuse to lock a part when this computer is offline':
+        'Refuser de verrouiller une pièce quand cet ordinateur est hors ligne',
+    'Someone could take the same part meanwhile. Lock your parts before going offline.':
+        "Quelqu'un pourrait prendre la même pièce entre-temps. Verrouillez vos pièces avant de vous déconnecter.",
+    'Take it anyway':
+        'Prendre quand même',
+    'The last version of {name}, saved by {user} on {when}, has not arrived on this computer yet.':
+        "La dernière version de {name}, enregistrée par {user} le {when}, n'est pas encore arrivée sur cet ordinateur.",
+    'This computer is offline: the others will not see your lock on {name} until it is back online.':
+        "Cet ordinateur est hors ligne : les autres ne verront votre verrou sur {name} qu'au retour de la connexion.",
+    'Used when the sync client does not say whether the lock was sent':
+        "Utilisé quand le client de synchro n'indique pas si le verrou est parti",
+    'Wait':
+        'Attendre',
+    'Wait for the sync, then edit it again. If you edit this copy, the other version will be lost.':
+        "Attendez la synchro puis modifiez-la à nouveau. Si vous modifiez cette copie, l'autre version sera perdue.",
+    'you are editing (lock being sent)':
+        "vous la modifiez (verrou en cours d'envoi)",
+    '{name} is only in the cloud: it is being downloaded.':
+        "{name} n'était que dans le cloud : elle est en cours de téléchargement.",
+    'Lock':
+        'Verrou',
+    'Select a part of the project to lock or release it':
+        'Sélectionnez une pièce du projet pour la verrouiller ou la libérer',
+    'You are editing it; the lock is being sent (wait before going offline). Click to release it':
+        "Vous la modifiez ; le verrou est en cours d'envoi (attendez avant de vous déconnecter). Cliquez pour la libérer",
+    'You are editing it. Click to release it':
+        'Vous la modifiez. Cliquez pour la libérer',
+    'Locked by someone else. Click to ask for it':
+        "Verrouillée par quelqu'un d'autre. Cliquez pour la demander",
+    'Take back':
+        'Reprendre',
+    'Your own lock left by a FreeCAD that closed. Click to take it back':
+        'Votre propre verrou laissé par un FreeCAD fermé. Cliquez pour le reprendre',
 }
 
 CATALOGS = {"French": FR}

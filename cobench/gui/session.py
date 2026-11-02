@@ -17,12 +17,14 @@ import atexit
 import contextlib
 import datetime
 import os
+import threading
+import time
 import uuid
 
 import FreeCAD as App
 import FreeCADGui as Gui
 
-from ..core import fcstd, locks, requests
+from ..core import fcstd, locks, requests, stamps, syncstate
 from ..core.identity import Identity
 from ..core.project import Project, find_root
 from ..i18n import tr
@@ -30,6 +32,8 @@ from . import prefs
 from .qt import QtCore, QtWidgets
 
 _session = None
+
+PENDING = "pending"   # my lock, not sent by the sync client yet
 
 # Property changes that never need a lock (showing/hiding a part).
 FREE_PROPERTIES = {"Visibility"}
@@ -95,6 +99,35 @@ def _stem(path):
     return os.path.splitext(os.path.basename(path))[0]
 
 
+class Connectivity:
+    """Is the computer online?  Checked in a thread so FreeCAD never waits."""
+
+    def __init__(self):
+        self.value = True
+        self.checked = 0.0
+        self._running = False
+
+    def poll(self, max_age=4.0):
+        """Last known answer; starts a new check when it is older than max_age."""
+        if not self._running and time.monotonic() - self.checked > max_age:
+            self._running = True
+            threading.Thread(target=self._run, daemon=True).start()
+        return self.value
+
+    def _run(self):
+        try:
+            self.value = syncstate.online()
+        finally:
+            self.checked = time.monotonic()
+            self._running = False
+
+    def now(self):
+        """Ask right away (for an action the user just asked for)."""
+        self.value = syncstate.online()
+        self.checked = time.monotonic()
+        return self.value
+
+
 class Session:
     def __init__(self):
         version = ".".join(App.Version()[:3])
@@ -118,6 +151,10 @@ class Session:
         self._tx = {}             # document name -> {"bad": bool, "checked": bool}
         self._recomputing = set()
         self._last_refusal = {}
+        self.connectivity = Connectivity()
+        self._lock_taken = {}     # part path -> (monotonic time, lock seen online since then)
+        self._lock_sent = set()   # part paths whose lock reached the server
+        self._offline_told = set()
         self.observer = _DocumentObserver(self)
         App.addDocumentObserver(self.observer)
         self.gui_observer = _GuiObserver(self)
@@ -356,6 +393,8 @@ class Session:
                 return None
             state = self.locks.force(path)
         else:
+            if state.status == locks.FREE and not self._may_lock_offline(name):
+                return None
             state = self.locks.acquire(path)
         if state.status != locks.MINE:
             QtWidgets.QMessageBox.warning(
@@ -364,6 +403,10 @@ class Session:
             self.tick()
             return None
         locks.set_read_only(path, False)
+        if not self._copy_is_latest(path):
+            self.locks.release(path)
+            self.tick()
+            return None
         try:
             doc = self._load(path)
         except Exception:
@@ -373,6 +416,85 @@ class Session:
         status_message(tr("{name} locked: you can edit it.", name=name))
         self.tick()
         return doc
+
+    def _may_lock_offline(self, name):
+        """True when online, or when the user takes the part anyway."""
+        if not prefs.offline_check() or self.connectivity.now():
+            return True
+        box = QtWidgets.QMessageBox(main_window())
+        box.setIcon(QtWidgets.QMessageBox.Warning)
+        box.setWindowTitle("CoBench")
+        box.setText(tr("This computer is offline: the others will not see your lock on {name} "
+                       "until it is back online.", name=name))
+        box.setInformativeText(tr("Someone could take the same part meanwhile. Lock your parts "
+                                  "before going offline."))
+        anyway = box.addButton(tr("Take it anyway"), QtWidgets.QMessageBox.DestructiveRole)
+        box.addButton(QtWidgets.QMessageBox.Cancel)
+        box.exec()
+        return box.clickedButton() is anyway
+
+    def _copy_is_latest(self, path):
+        """Warn when the last saved version of the part has not arrived yet."""
+        name = os.path.basename(path)
+        if syncstate.file_state(path) == syncstate.CLOUD_ONLY:
+            status_message(tr("{name} is only in the cloud: it is being downloaded.", name=name))
+        try:
+            stamp = stamps.newer_elsewhere(path)
+        except OSError:
+            stamp = None
+        if stamp is None:
+            return True
+        saved = locks.parse_iso(stamp.saved)
+        when = saved.astimezone().strftime("%d/%m/%Y %H:%M") if saved else "?"
+        box = QtWidgets.QMessageBox(main_window())
+        box.setIcon(QtWidgets.QMessageBox.Warning)
+        box.setWindowTitle("CoBench")
+        box.setText(tr("The last version of {name}, saved by {user} on {when}, has not arrived on "
+                       "this computer yet.", name=name, user=stamp.user, when=when))
+        box.setInformativeText(tr("Wait for the sync, then edit it again. If you edit this copy, "
+                                  "the other version will be lost."))
+        wait = box.addButton(tr("Wait"), QtWidgets.QMessageBox.AcceptRole)
+        box.addButton(tr("Edit this copy anyway"), QtWidgets.QMessageBox.DestructiveRole)
+        box.setDefaultButton(wait)
+        box.exec()
+        return box.clickedButton() is not wait
+
+    # -- is my lock sent? ----------------------------------------------------
+    def lock_pending(self, path):
+        """True while the lock I hold on path may not have reached the others."""
+        return self.locks.holds(path) and path not in self._lock_sent
+
+    def _check_lock_sync(self):
+        held = set(self.locks.held)
+        for path in list(self._lock_taken):
+            if path not in held:
+                self._lock_taken.pop(path, None)
+                self._lock_sent.discard(path)
+                self._offline_told.discard(path)
+        waiting = [p for p in held if p not in self._lock_sent and self.managed(p)]
+        if not waiting:
+            return
+        is_online = self.connectivity.poll()
+        now = time.monotonic()
+        for path in waiting:
+            since, was_online = self._lock_taken.get(path, (now, True))
+            if not is_online:
+                was_online = False
+                self._lock_taken[path] = (now, False)  # the delay starts again once back online
+                if path not in self._offline_told:
+                    self._offline_told.add(path)
+                    self.notify(tr("Offline: the lock on {name} may not have reached the others yet.",
+                                   name=_stem(path)), warning=True)
+                continue
+            if path not in self._lock_taken or not was_online:
+                self._lock_taken[path] = (now, True)
+                since = now
+            state = syncstate.file_state(locks.lock_path(path))
+            sent = state == syncstate.SYNCED or (
+                state == syncstate.UNKNOWN and now - since >= prefs.sync_delay())
+            if sent:
+                self._lock_sent.add(path)
+                self.notify(tr("Lock on {name} sent: you can go offline.", name=_stem(path)))
 
     def view(self, path):
         """Open without locking."""
@@ -491,6 +613,7 @@ class Session:
             os.remove(path)
             self.locks.release(path)
             requests.clear(path)
+            stamps.remove(path)
             project.moved(path, new_path)
             if path in mine_before:
                 self.locks.acquire(new_path)
@@ -552,6 +675,7 @@ class Session:
         self.parts, self.states = parts, states
         self._check_requests(parts, states)
         self._reload_changed()
+        self._check_lock_sync()
 
     def _compare(self, path, before, now):
         name = _stem(path)
@@ -767,6 +891,11 @@ class Session:
 
     def on_saved(self, doc, path):
         self.loaded[_norm(path)] = _mtime(path)
+        if self.managed(path) and self.locks.holds(path):
+            try:
+                stamps.write(path, self.identity)
+            except OSError as exc:
+                App.Console.PrintWarning("CoBench: %s\n" % exc)
         later(self.changed)
 
     def on_recomputing(self, doc):

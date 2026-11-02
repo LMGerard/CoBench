@@ -109,3 +109,22 @@ def panel_view():
 
 def set_panel_view(value):
     _group().SetString("PanelView", value)
+
+
+def offline_check():
+    """Refuse to take a lock when this computer is offline."""
+    return _group().GetBool("OfflineCheck", True)
+
+
+def set_offline_check(value):
+    _group().SetBool("OfflineCheck", bool(value))
+
+
+def sync_delay():
+    """Seconds online after taking a lock before it counts as sent
+    (when the sync client does not say it)."""
+    return max(1, _group().GetInt("SyncDelay", 10))
+
+
+def set_sync_delay(value):
+    _group().SetInt("SyncDelay", int(value))
