@@ -663,12 +663,11 @@ class Session:
                         tr("{name} could not be saved, so it stays locked for you.\n\n{error}",
                            name=name, error=exc))
                     return False
-                if self.is_modified(doc):
-                    QtWidgets.QMessageBox.warning(
-                        main_window(), "CoBench",
-                        tr("{name} could not be saved, so it stays locked for you.\n\n{error}",
-                           name=name, error=tr("The document is still marked as modified.")))
-                    return False
+                try:
+                    # App's save leaves the window's "modified" mark: clear it like a save from the menu
+                    Gui.getDocument(doc.Name).Modified = False
+                except Exception:
+                    pass
             elif answer == QtWidgets.QMessageBox.Discard:
                 # Back to the saved version: others will see exactly that file.
                 self._reopen(doc, False)
@@ -1012,6 +1011,29 @@ class Session:
             App.Console.PrintWarning("CoBench: %s\n" % exc)
         self.refuse(doc)
 
+    def on_undo_redo(self, doc, redo):
+        """Ctrl+Z / Ctrl+Y on a file that is not locked: put it back as it was.
+
+        The history is kept: once the part is locked again, Ctrl+Z works again.
+        """
+        if self._quiet or not prefs.strict() or not _alive(doc) or self.editable(doc):
+            return
+
+        def revert():
+            if not _alive(doc):
+                return
+            try:
+                with self.quiet():
+                    if redo:
+                        doc.undo()
+                    else:
+                        doc.redo()
+                    doc.recompute()
+            except Exception as exc:
+                App.Console.PrintWarning("CoBench: %s\n" % exc)
+            self.refuse(doc)
+        later(revert)
+
     def on_in_edit(self, view_provider):
         if self._quiet or not prefs.strict():
             return
@@ -1159,6 +1181,12 @@ class _DocumentObserver:
 
     def slotChangedObject(self, obj, prop):
         self._safe(self.session.on_changed, obj, prop)
+
+    def slotUndoDocument(self, doc):
+        self._safe(self.session.on_undo_redo, doc, False)
+
+    def slotRedoDocument(self, doc):
+        self._safe(self.session.on_undo_redo, doc, True)
 
 
 class _GuiObserver:

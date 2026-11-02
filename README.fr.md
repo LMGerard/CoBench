@@ -10,9 +10,11 @@ dépend d'aucun d'eux.
   la libère.
 - **Panneau.** Toutes les pièces du projet avec leur aperçu, leur état (libre, modifiée par
   vous, verrouillée par quelqu'un), qui l'a enregistrée en dernier et où elle est utilisée.
-- **Vue assemblage.** Dans un assemblage, les pièces modifiées par quelqu'un d'autre sont
-  encadrées en rouge avec son nom, les vôtres en vert. Double-cliquez une pièce dans la vue
-  3D pour ouvrir son fichier en lecture seule.
+- **Vue assemblage.** Dans un assemblage, les pièces modifiées par quelqu'un d'autre ont un
+  cadre rouge en pointillés avec son nom, les vôtres un cadre vert (jaune tant que votre verrou
+  n'est pas parvenu aux autres). Au survol, toute la pièce s'éclaire ; un clic ouvre un petit
+  menu : ouvrir en lecture seule, modifier ou demander, voir dans le panneau. Les faces et
+  arêtes n'y sont pas sélectionnables, sauf si vous avez verrouillé l'assemblage lui-même.
 - **Découper en pièces.** Transforme un document qui contient plusieurs corps en un fichier
   par pièce, un `Variables.FCStd` avec tous les VarSets et tableurs (les pièces continuent à
   les lire : changer une cote met tout à jour) et un `Assemblage.FCStd` qui relie les pièces
@@ -57,9 +59,8 @@ Avec git : `git clone https://github.com/LMGerard/CoBench` dans ce dossier `Mod`
 3. Double-cliquez une pièce pour l'ouvrir en lecture seule. Pour la modifier, cliquez sur le
    cadenas (ou *Modifier*) : elle est verrouillée et ouverte. Travaillez,
    enregistrez, fermez : le verrou est rendu à la fermeture du document, ou avec *Libérer*.
-4. *Ouvrir l'assemblage central* montre qui travaille sur quoi. Double-cliquez une pièce
-   dans la vue 3D pour l'ouvrir en lecture seule, ou sélectionnez-la puis cliquez sur le cadenas
-   pour la modifier.
+4. *Ouvrir l'assemblage central* montre qui travaille sur quoi. Cliquez une pièce dans la
+   vue 3D pour l'ouvrir en lecture seule, la modifier ou la demander.
 
 CoBench démarre avec FreeCAD : verrous, protection et notifications fonctionnent dans tous
 les ateliers, même sans jamais ouvrir l'atelier CoBench. Fermer une pièce la libère, et

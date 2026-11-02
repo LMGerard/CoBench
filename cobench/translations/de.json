@@ -187,6 +187,7 @@
  "{name} locked: waiting for the last version.": "{name} gesperrt: warten auf die letzte Version.",
  "{what}: Supabase error {status} {message}": "{what}: Supabase-Fehler {status} {message}",
  "{name} could not be saved, so it stays locked for you.\n\n{error}": "{name} konnte nicht gespeichert werden und bleibt daher für Sie gesperrt.\n\n{error}",
- "The document is still marked as modified.": "Das Dokument ist weiterhin als geändert markiert.",
- "The new version of {name} could not be recorded in the lock database, so it stays locked for you (otherwise others could edit an older copy).\n\n{error}": "Die neue Version von {name} konnte nicht in der Sperrdatenbank eingetragen werden, daher bleibt es für Sie gesperrt (sonst könnten andere eine ältere Kopie bearbeiten).\n\n{error}"
+ "The new version of {name} could not be recorded in the lock database, so it stays locked for you (otherwise others could edit an older copy).\n\n{error}": "Die neue Version von {name} konnte nicht in der Sperrdatenbank eingetragen werden, daher bleibt es für Sie gesperrt (sonst könnten andere eine ältere Kopie bearbeiten).\n\n{error}",
+ "In assemblies, pick whole parts and show a small menu (instead of selecting faces)": "In Baugruppen ganze Teile hervorheben und ein kleines Menü anzeigen (statt Flächen auszuwählen)",
+ "Show in the panel": "Im Bedienfeld anzeigen"
 }

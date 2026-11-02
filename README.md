@@ -11,8 +11,11 @@ on any of them.
   read-only on their computer until it is released. Closing the part releases it.
 - **Panel.** Every part of the project with its preview, its state (free, edited by you,
   locked by someone), who saved it last and which parts use it.
-- **Assembly view.** In an assembly, parts edited by someone else are boxed in red with
-  the person's name, yours in green. Double-click a part in the 3D view to open its file read-only.
+- **Assembly view.** In an assembly, parts edited by someone else get a dashed red box with
+  the person's name, yours a green one (yellow while your lock has not reached the others).
+  Hovering a part lights the whole part up; clicking it opens a small menu: open read-only,
+  edit or ask for it, show in the panel. Faces and edges are not selectable there, unless you
+  have locked the assembly itself.
 - **Split into part files.** Turns one document holding many bodies into one file per part,
   a `Variables.FCStd` with every VarSet and spreadsheet (parts keep reading them, so changing
   a value still updates everything) and an `Assemblage.FCStd` linking the parts in place.
@@ -53,8 +56,8 @@ With git: `git clone https://github.com/LMGerard/CoBench` in that `Mod` folder.
 3. Double-click a part to open it read-only. To change it, click the padlock (or *Edit*):
    it is locked and opened. Work, save, close: the lock is
    released when you close the document, or with *Release*.
-4. *Open central assembly* shows who works on what. Double-click a part in the 3D view
-   to open it read-only, or select it and click the padlock to edit it.
+4. *Open central assembly* shows who works on what. Click a part in the 3D view to open
+   it read-only, edit it or ask for it.
 
 CoBench starts with FreeCAD: locks, protection and notifications work in every workbench,
 even if you never open the CoBench one. Closing a part releases it, and saving a free part

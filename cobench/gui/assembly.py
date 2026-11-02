@@ -7,8 +7,11 @@ links made with App::Link...).  Over each linked part CoBench draws a
 coloured box: red while someone else edits the file, green while you do.
 Nothing is written into the document: the boxes live only in the 3D view.
 
-Clicking a part shows its file in the CoBench panel; double-clicking it in the
-3D view opens that file read-only; the padlock (or "Edit part") locks it.
+In an assembly you have not locked yourself, faces and edges are not
+selectable: hovering a part lights the whole part up, and clicking it opens a
+small menu (open read-only, edit, ask for it, show in the panel).  In an
+assembly you have locked, FreeCAD's normal selection is kept: clicking a part
+shows its file in the panel, double-clicking opens it read-only.
 """
 
 import os
@@ -20,14 +23,17 @@ import FreeCADGui as Gui
 from ..core import locks
 from ..i18n import tr
 from . import prefs
-from .qt import QtWidgets
+from .qt import Qt, QtCore, QtGui, QtWidgets
 
 try:
     from pivy import coin
 except ImportError:  # outside FreeCAD (tests)
     coin = None
 
+PENDING = "pending"  # my lock, not yet seen by the others (same value as session.PENDING)
+
 BOX_COLORS = {
+    PENDING: (0.85, 0.66, 0.05),
     locks.MINE: (0.18, 0.63, 0.26),
     locks.OTHER: (0.82, 0.20, 0.17),
     locks.ORPHAN: (0.90, 0.55, 0.08),
@@ -54,29 +60,38 @@ def linked_file(obj):
     return None
 
 
-def part_under(doc, root_name, subname, project_contains):
-    """Part file designated by a click on ``root_name`` + ``subname``.
+def link_under(doc, root_name, subname, project_contains):
+    """(part file, top object, subname of the part) for a click on ``root_name`` + ``subname``.
 
     Walks the object path from the top and returns the first link leading to
     another file of the project, so a click on a face of a body inside a
     sub-assembly designates the sub-assembly's file when the click path goes
-    through it, else the part itself.
+    through it, else the part itself.  (None, None, None) if nothing matches.
     """
     root = doc.getObject(root_name) if doc is not None else None
     if root is None:
-        return None
+        return None, None, None
     try:
         chain = root.getSubObjectList(subname or "")
     except Exception:
         chain = [root]
+    names = [n for n in (subname or "").split(".")]
     own = _norm(doc.FileName) if doc.FileName else None
-    for obj in chain:
+    for index, obj in enumerate(chain):
         path = linked_file(obj)
-        if path and _norm(path) != own and project_contains(path):
-            return path
-        if obj.Document is not doc and obj.Document.FileName and project_contains(obj.Document.FileName):
-            return obj.Document.FileName
-    return None
+        if not (path and _norm(path) != own and project_contains(path)):
+            path = None
+            if obj.Document is not doc and obj.Document.FileName and project_contains(obj.Document.FileName):
+                path = obj.Document.FileName
+        if path:
+            sub = ".".join(names[:index]) + "." if index else ""
+            return path, root, sub
+    return None, None, None
+
+
+def part_under(doc, root_name, subname, project_contains):
+    """Part file designated by a click on ``root_name`` + ``subname``."""
+    return link_under(doc, root_name, subname, project_contains)[0]
 
 
 def assembly_links(doc, project_contains):
@@ -89,10 +104,32 @@ def assembly_links(doc, project_contains):
         path = linked_file(obj)
         if not path or _norm(path) == own or not project_contains(path):
             continue
+        if not _shown(obj):
+            continue
         box = _global_bound_box(obj)
         if box is not None and box.isValid():
             found.append((obj, box, path))
     return found
+
+
+def _shown(obj):
+    """False if the object or one of the containers above it is hidden."""
+    if not getattr(obj, "Visibility", True):
+        return False
+    try:
+        parents = obj.Parents
+    except Exception:
+        parents = []
+    if parents:
+        root, sub = parents[0]
+        try:
+            chain = root.getSubObjectList(sub)
+        except Exception:
+            chain = [root]
+        for item in chain:
+            if not getattr(item, "Visibility", True):
+                return False
+    return True
 
 
 def _global_bound_box(obj):
@@ -121,6 +158,9 @@ class Overlay:
         self.root.addChild(pick)
         self.content = coin.SoSeparator()
         self.root.addChild(self.content)
+        self.highlight = coin.SoSeparator()
+        self.root.addChild(self.highlight)
+        self.highlighted = None
         self.signature = None
         self.graphs = []
 
@@ -162,6 +202,15 @@ class Overlay:
         for box, status, label in entries:
             self.content.addChild(_box_node(box, BOX_COLORS[status], label))
 
+    def set_highlight(self, key, node):
+        """Light up one part (node from _highlight_node), or none with key None."""
+        if key == self.highlighted:
+            return
+        self.highlighted = key
+        self.highlight.removeAllChildren()
+        if node is not None:
+            self.highlight.addChild(node)
+
 
 def _box_node(box, color, label):
     margin = 0.5 + 0.01 * max(box.XLength, box.YLength, box.ZLength)
@@ -171,19 +220,11 @@ def _box_node(box, color, label):
     sep.addChild(move)
     size = (box.XLength + 2 * margin, box.YLength + 2 * margin, box.ZLength + 2 * margin)
 
-    filled = coin.SoSeparator()
-    material = coin.SoMaterial()
-    material.diffuseColor.setValue(*color)
-    material.emissiveColor.setValue(*[c * 0.4 for c in color])
-    material.transparency.setValue(0.78)
-    filled.addChild(material)
-    filled.addChild(_cube(size))
-    sep.addChild(filled)
-
     edges = coin.SoSeparator()
     style = coin.SoDrawStyle()
     style.style = coin.SoDrawStyle.LINES
     style.lineWidth = 2
+    style.linePattern = 0xF0F0  # dashed
     edges.addChild(style)
     line_color = coin.SoBaseColor()
     line_color.rgb.setValue(*color)
@@ -209,6 +250,55 @@ def _box_node(box, color, label):
     return sep
 
 
+def highlight_color():
+    """FreeCAD's own pre-selection colour (Preferences > Display > Colors)."""
+    try:
+        value = App.ParamGet("User parameter:BaseApp/Preferences/View").GetUnsigned("HighlightColor", 0xE1E114FF)
+    except Exception:
+        value = 0xE1E114FF
+    return tuple(((value >> shift) & 0xFF) / 255.0 for shift in (24, 16, 8))
+
+
+def _highlight_node(root, sub):
+    """The whole part, drawn over itself in the highlight colour."""
+    import Part
+    try:
+        shape = Part.getShape(root, sub, needSubElement=False)
+    except Exception:
+        return None
+    if shape.isNull():
+        return None
+    box = shape.BoundBox
+    tolerance = max(0.01, 0.005 * box.DiagonalLength) if box.isValid() else 0.1
+    try:
+        points, triangles = shape.tessellate(tolerance)
+    except Exception:
+        return None
+    if not triangles:
+        return None
+    color = highlight_color()
+    sep = coin.SoSeparator()
+    offset = coin.SoPolygonOffset()  # drawn just in front of the part's own faces
+    offset.factor = -1.0
+    offset.units = -1.0
+    sep.addChild(offset)
+    material = coin.SoMaterial()
+    material.diffuseColor.setValue(*color)
+    material.emissiveColor.setValue(*[c * 0.6 for c in color])
+    material.transparency.setValue(0.35)
+    sep.addChild(material)
+    coords = coin.SoCoordinate3()
+    coords.point.setValues(0, len(points), [(p.x, p.y, p.z) for p in points])
+    sep.addChild(coords)
+    faces = coin.SoIndexedFaceSet()
+    index = []
+    for a, b, c in triangles:
+        index.extend((a, b, c, -1))
+    faces.coordIndex.setValues(0, len(index), index)
+    sep.addChild(faces)
+    return sep
+
+
 def _cube(size):
     cube = coin.SoCube()
     cube.width, cube.height, cube.depth = size
@@ -222,10 +312,19 @@ class AssemblyWatcher:
         self.session = session
         self.panel_getter = panel_getter
         self.overlays = {}      # document name -> Overlay
-        self.callbacks = {}     # document name -> [(view, callback)]
         self.dirty = set()
         self.link_cache = {}    # document name -> (object count, links)
+        self.highlights = {}    # (document, top object, subname) -> coin node or None
+        self.marker = coin.SoInfo() if coin is not None else None  # marks views already hooked
+        if self.marker is not None:
+            self.marker.ref()
         self.last_click = (0.0, None, None)
+        self.press = None       # (document name, position) of the left button press
+        self.buttons_down = 0
+        self.last_hover = 0.0
+        self.menu = None
+        self.gate = _Gate(self)
+        self.gate_on = False
         session.listeners.append(self.refresh)
         session.recompute_listeners.append(self._recomputed)
         Gui.Selection.addObserver(self)
@@ -234,7 +333,20 @@ class AssemblyWatcher:
         return self.session.managed(path)
 
     def _recomputed(self, doc):
+        # A part changed or moved: every assembly showing it needs new boxes.
+        self.dirty.update(self.overlays)
         self.dirty.add(doc.Name)
+        self.highlights.clear()
+
+    def picking(self, doc_name):
+        """True for an assembly of the project that I have not locked."""
+        if not prefs.assembly_picking() or doc_name not in self.overlays:
+            return False
+        try:
+            doc = App.getDocument(doc_name)
+        except Exception:
+            return False
+        return not self.session.editable(doc)
 
     def refresh(self):
         if coin is None:
@@ -243,14 +355,14 @@ class AssemblyWatcher:
         for name in list(self.overlays):
             if name not in documents:
                 self.overlays.pop(name).detach()
-                self.callbacks.pop(name, None)
         for name in list(self.link_cache):
             if name not in documents:
                 self.link_cache.pop(name)
-        if not prefs.show_overlay():
+        if not prefs.show_overlay() and not prefs.assembly_picking():
             for overlay in self.overlays.values():
                 overlay.detach()
             self.overlays.clear()
+            self._update_gate()
             return
         for name, doc in documents.items():
             if not doc.FileName or not self._contains(doc.FileName):
@@ -268,43 +380,92 @@ class AssemblyWatcher:
             if overlay is None:
                 overlay = self.overlays[name] = Overlay(doc)
             overlay.attach()
-            self._watch_clicks(doc)
+            self._watch_views(doc)
             entries = []
-            for _obj, box, path in links:
-                state = self.session.locks.state(path)
-                if state.status in BOX_COLORS:
-                    if state.status == locks.MINE:
-                        label = tr("you")
-                    else:
-                        label = state.info.user if state.info else "?"
-                    entries.append((box, state.status, label))
+            if prefs.show_overlay():
+                for _obj, box, path in links:
+                    status, label = self._look(path)
+                    if status in BOX_COLORS:
+                        entries.append((box, status, label))
             overlay.update(entries, force=name in self.dirty)
+            if not self.picking(name):
+                overlay.set_highlight(None, None)
             self.dirty.discard(name)
+        self._update_gate()
 
-    # -- clicks ----------------------------------------------------------------
-    def _watch_clicks(self, doc):
-        if doc.Name in self.callbacks:
+    def _look(self, path):
+        """(box status, label) of a part."""
+        state = self.session.locks.state(path)
+        if state.status == locks.MINE:
+            return (PENDING if self.session.lock_pending(path) else locks.MINE), tr("you")
+        return state.status, (state.info.user if state.info else "?")
+
+    # -- no face or edge selection in picked assemblies --------------------------
+    def _update_gate(self):
+        """The selection gate refuses selection in picked assemblies.
+
+        It is left alone while a task dialog is open (sketcher, attachment...),
+        whose own selection filter must win.
+        """
+        wanted = any(self.picking(name) for name in self.overlays)
+        try:
+            busy = bool(Gui.Control.activeDialog())
+        except Exception:
+            busy = False
+        if busy:
             return
+        try:
+            if wanted:
+                Gui.Selection.addSelectionGate(self.gate)  # again each time: another one may have replaced it
+                self.gate_on = True
+            elif self.gate_on:
+                Gui.Selection.removeSelectionGate()
+                self.gate_on = False
+        except Exception as exc:
+            App.Console.PrintWarning("CoBench: %s\n" % exc)
+
+    # -- mouse in the 3D views ---------------------------------------------------
+    def _watch_views(self, doc):
         gdoc = Gui.getDocument(doc.Name)
-        hooks = []
         try:
             views = gdoc.mdiViewsOfType("Gui::View3DInventor")
         except Exception:
             views = []
         for view in views:
-            callback = self._make_click_handler(view, doc.Name)
             try:
-                view.addEventCallback("SoMouseButtonEvent", callback)
-                hooks.append((view, callback))
-            except Exception:
-                pass
-        self.callbacks[doc.Name] = hooks
+                graph = view.getSceneGraph()
+                if graph.findChild(self.marker) >= 0:
+                    continue
+                graph.addChild(self.marker)
+                view.addEventCallback("SoMouseButtonEvent", self._make_click_handler(view, doc.Name))
+                view.addEventCallback("SoLocation2Event", self._make_move_handler(view, doc.Name))
+            except Exception as exc:
+                App.Console.PrintWarning("CoBench: %s\n" % exc)
 
     def _make_click_handler(self, view, doc_name):
         def on_click(event):
-            if event.get("Button") != "BUTTON1" or event.get("State") != "DOWN":
-                return
+            button, state = event.get("Button"), event.get("State")
             position = tuple(event.get("Position", (0, 0)))
+            if state == "DOWN":
+                self.buttons_down += 1
+            elif state == "UP":
+                self.buttons_down = max(0, self.buttons_down - 1)
+            if button != "BUTTON1":
+                return
+            if self.picking(doc_name):
+                if state == "DOWN":
+                    self.press = (doc_name, position, time.monotonic())
+                    return
+                press, self.press = self.press, None
+                if (state == "UP" and press and press[0] == doc_name and time.monotonic() - press[2] < 0.6
+                        and abs(position[0] - press[1][0]) <= 4 and abs(position[1] - press[1][1]) <= 4):
+                    path = self._path_at(view, position)
+                    if path:
+                        from .session import later
+                        later(lambda: self.show_menu(path))
+                return
+            if state != "DOWN":
+                return
             now = time.monotonic()
             last_time, last_pos, last_doc = self.last_click
             self.last_click = (now, position, doc_name)
@@ -312,20 +473,76 @@ class AssemblyWatcher:
             if (last_doc == doc_name and last_pos is not None and now - last_time <= interval
                     and abs(position[0] - last_pos[0]) <= 4 and abs(position[1] - last_pos[1]) <= 4):
                 self.last_click = (0.0, None, None)
-                info = view.getObjectInfo(position)
-                if info:
-                    path = self._path_from_info(info)
-                    if path:
-                        # Leave the coin callback before opening dialogs.
-                        from .session import later
-                        later(lambda: self.session.view(path))
+                path = self._path_at(view, position)
+                if path:
+                    # Leave the coin callback before opening dialogs.
+                    from .session import later
+                    later(lambda: self.session.view(path))
         return on_click
+
+    def _make_move_handler(self, view, doc_name):
+        def on_move(event):
+            overlay = self.overlays.get(doc_name)
+            if overlay is None:
+                return
+            if not self.picking(doc_name) or self.buttons_down:
+                if not self.picking(doc_name):
+                    overlay.set_highlight(None, None)
+                return
+            now = time.monotonic()
+            if now - self.last_hover < 0.03:
+                return
+            self.last_hover = now
+            position = tuple(event.get("Position", (0, 0)))
+            path, root, sub = self._link_at(view, position)
+            if path is None:
+                overlay.set_highlight(None, None)
+                _set_cursor(None)
+                return
+            key = (doc_name, root.Name, sub)
+            if key not in self.highlights:
+                self.highlights[key] = _highlight_node(root, sub)
+            overlay.set_highlight(key, self.highlights[key])
+            status, label = self._look(path)
+            name = os.path.splitext(os.path.basename(path))[0]
+            text = name if status not in BOX_COLORS else "%s (%s)" % (name, label)
+            try:
+                Gui.getMainWindow().statusBar().showMessage(text, 3000)
+            except Exception:
+                pass
+            _set_cursor(Qt.PointingHandCursor)
+        return on_move
+
+    def _link_at(self, view, position):
+        try:
+            info = view.getObjectInfo(position)
+        except Exception:
+            info = None
+        if not info:
+            return None, None, None
+        doc = App.getDocument(info.get("Document")) if info.get("Document") else None
+        root = info.get("ParentObject") or info.get("Object")
+        sub = info.get("SubName", "") if info.get("ParentObject") else ""
+        return link_under(doc, root, sub, self._contains)
+
+    def _path_at(self, view, position):
+        return self._link_at(view, position)[0]
 
     def _path_from_info(self, info):
         doc = App.getDocument(info.get("Document")) if info.get("Document") else None
         root = info.get("ParentObject") or info.get("Object")
         sub = info.get("SubName", "") if info.get("ParentObject") else ""
         return part_under(doc, root, sub, self._contains)
+
+    # -- the small menu -------------------------------------------------------
+    def show_menu(self, path):
+        if self.menu is not None:
+            try:
+                self.menu.close()
+            except Exception:
+                pass
+        self.menu = PartMenu(self, path)
+        self.menu.popup(QtGui.QCursor.pos())
 
     # -- selection observer (FreeCAD calls these by name) ----------------------
     def addSelection(self, doc_name, obj_name, sub, _point):
@@ -339,6 +556,96 @@ class AssemblyWatcher:
         panel = self.panel_getter()
         if path and panel is not None:
             panel.select_path(path)
+
+
+class _Gate:
+    """Selection gate: nothing selectable in picked assemblies, the rest untouched."""
+
+    def __init__(self, watcher):
+        self.watcher = watcher
+
+    def allow(self, doc, obj, sub):
+        try:
+            return not self.watcher.picking(doc.Name)
+        except Exception:
+            return True
+
+
+def _set_cursor(shape):
+    """FreeCAD shows a 'forbidden' cursor where the gate refuses: show ours instead."""
+    def apply():
+        widget = QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
+        if widget is None:
+            return
+        if shape is None:
+            widget.unsetCursor()
+        else:
+            widget.setCursor(QtGui.QCursor(shape))
+    from .session import later
+    later(apply)
+
+
+class PartMenu(QtWidgets.QFrame):
+    """Small floating menu shown when a part of an assembly is clicked."""
+
+    def __init__(self, watcher, path):
+        super().__init__(Gui.getMainWindow(), Qt.Popup)
+        self.setAttribute(Qt.WA_DeleteOnClose)
+        self.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self.watcher = watcher
+        self.path = path
+        session = watcher.session
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(4)
+        title = QtWidgets.QLabel("<b>%s</b>" % _escape(os.path.splitext(os.path.basename(path))[0]))
+        layout.addWidget(title)
+        state = session.locks.state(path)
+        from . import panel as panel_mod
+        pending = "waiting" if session.waiting_for_file(path) else session.lock_pending(path)
+        status = QtWidgets.QLabel(panel_mod.status_text(state, pending))
+        status.setStyleSheet("color: gray;")
+        layout.addWidget(status)
+        if state.status == locks.OTHER:
+            self._button(layout, tr("Ask for it"), lambda: session.ask_for(path))
+        elif state.status == locks.MINE:
+            self._button(layout, tr("Edit"), lambda: session.edit(path))
+            self._button(layout, tr("Release"), lambda: session.release(path))
+        else:
+            self._button(layout, tr("Edit"), lambda: session.edit(path))
+        self._button(layout, tr("Open read-only"), lambda: session.view(path))
+        self._button(layout, tr("Show in the panel"), self._show_in_panel)
+
+    def _button(self, layout, text, action):
+        button = QtWidgets.QPushButton(text)
+        button.setFlat(True)
+        button.setStyleSheet("text-align: left; padding: 3px 6px;")
+
+        def run():
+            self.close()
+            from .session import later
+            later(action)
+        button.clicked.connect(run)
+        layout.addWidget(button)
+
+    def _show_in_panel(self):
+        from . import panel as panel_mod
+        panel_mod.show_panel().select_path(self.path)
+
+    def popup(self, position):
+        self.adjustSize()
+        self.move(position + QtCore.QPoint(8, 8))
+        self.show()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.close()
+            return
+        super().keyPressEvent(event)
+
+
+def _escape(text):
+    return (text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def selected_part(session):

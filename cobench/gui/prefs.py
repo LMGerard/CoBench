@@ -128,3 +128,12 @@ def sync_delay():
 
 def set_sync_delay(value):
     _group().SetInt("SyncDelay", int(value))
+
+
+def assembly_picking():
+    """In assemblies not locked by me: whole-part highlight and a small menu on click."""
+    return _group().GetBool("AssemblyPicking", True)
+
+
+def set_assembly_picking(value):
+    _group().SetBool("AssemblyPicking", bool(value))

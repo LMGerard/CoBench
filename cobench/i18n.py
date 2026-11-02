@@ -344,10 +344,11 @@ FR = {
         '{what} : erreur Supabase {status} {message}',
     "{name} could not be saved, so it stays locked for you.\n\n{error}":
         "{name} n'a pas pu être enregistrée : elle reste verrouillée pour vous.\n\n{error}",
-    "The document is still marked as modified.":
-        "Le document est toujours marqué comme modifié.",
     "The new version of {name} could not be recorded in the lock database, so it stays locked for you (otherwise others could edit an older copy).\n\n{error}":
         "La nouvelle version de {name} n'a pas pu être inscrite dans la base des verrous : la pièce reste verrouillée pour vous (sinon les autres pourraient modifier une copie plus ancienne).\n\n{error}",
+    "In assemblies, pick whole parts and show a small menu (instead of selecting faces)":
+        "Dans les assemblages, désigner des pièces entières et afficher un petit menu (au lieu de sélectionner des faces)",
+    "Show in the panel": "Voir dans le panneau",
 }
 
 # Other languages live in cobench/translations/<code>.json (English text -> translation).

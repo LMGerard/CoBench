@@ -285,6 +285,10 @@ class SettingsDialog(QtWidgets.QDialog):
         self.overlay = QtWidgets.QCheckBox(tr("Show locks as coloured boxes in assemblies"))
         self.overlay.setChecked(prefs.show_overlay())
         form.addRow(self.overlay)
+        self.picking = QtWidgets.QCheckBox(
+            tr("In assemblies, pick whole parts and show a small menu (instead of selecting faces)"))
+        self.picking.setChecked(prefs.assembly_picking())
+        form.addRow(self.picking)
         self.strict = QtWidgets.QCheckBox(tr("Refuse changes to parts I have not locked"))
         self.strict.setChecked(prefs.strict())
         form.addRow(self.strict)
@@ -410,6 +414,7 @@ class SettingsDialog(QtWidgets.QDialog):
             prefs.set_freecad_author(name)
         prefs.set_protect_files(self.protect.isChecked())
         prefs.set_show_overlay(self.overlay.isChecked())
+        prefs.set_assembly_picking(self.picking.isChecked())
         prefs.set_strict(self.strict.isChecked())
         prefs.set_auto_reload(self.reload.isChecked())
         prefs.set_notifications(self.notifications.isChecked())
