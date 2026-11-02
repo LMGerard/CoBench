@@ -17,6 +17,16 @@ on any of them.
   a `Variables.FCStd` with every VarSet and spreadsheet (parts keep reading them, so changing
   a value still updates everything) and an `Assemblage.FCStd` linking the parts in place.
   The original file is not modified.
+- **Only edit what you locked.** A part you have not locked cannot be changed: edit mode is
+  refused before its panel opens, and any other change is undone at once (option).
+- **Live project.** Every few seconds CoBench looks at the folder: parts saved by others are
+  reloaded once the file has fully arrived, and you are told when someone takes or releases
+  a part. *Ask for it* sends a request to the person editing a part; they answer
+  *Release it* or *Not now*.
+- **Folders, tags and links.** The panel shows the parts by folder (or as thumbnails), filters
+  by name or `#tag`, flags broken links, and draws the links between parts. Rename or move a
+  part from the panel: every file using it is relinked.
+- **Clean tree.** The files an assembly loads stay out of FreeCAD's tree.
 
 FreeCAD 1.0 or later. English and French.
 
@@ -45,8 +55,9 @@ With git: `git clone https://github.com/LMGerard/CoBench` in that `Mod` folder.
 4. *Open central assembly* shows who works on what. Double-click a part in the 3D view,
    or select it and use *Edit part* (also in the right-click menu), to edit its file.
 
-Once the workbench has been loaded, locks are handled in every workbench: closing a part
-releases it, and saving a free part of a project you have not locked locks it.
+CoBench starts with FreeCAD: locks, protection and notifications work in every workbench,
+even if you never open the CoBench one. Closing a part releases it, and saving a free part
+of the project locks it. Each option can be turned off in *My name and options*.
 
 ### What the colours mean
 

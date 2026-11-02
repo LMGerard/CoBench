@@ -332,7 +332,8 @@ def split_active(session):
     splitter = Splitter(doc, folder)
     QtWidgets.QApplication.setOverrideCursor(_busy())
     try:
-        assembly = splitter.run()
+        with session.quiet():
+            assembly = splitter.run()
     except SplitError as exc:
         QtWidgets.QApplication.restoreOverrideCursor()
         splitter.close_parts(None)

@@ -132,6 +132,112 @@ FR = {
     "Split {name} into one file per part in:\n{folder}\n\nThe original file is not modified.":
         "Découper {name} en un fichier par pièce dans :\n{folder}\n\nLe fichier d'origine "
         "n'est pas modifié.",
+    'A file name cannot contain < > : " / \\ | ? *':
+        'Un nom de fichier ne peut pas contenir < > : " / \\ | ? *',
+    'A newer {name} was saved by someone else; your copy has unsaved changes and was not reloaded.':
+        "Une version plus récente de {name} a été enregistrée par quelqu'un d'autre ; votre copie a des modifications non enregistrées et n'a pas été rechargée.",
+    'Activity':
+        'Activité',
+    'An arrow goes from a file to the parts it uses. Click to select, double-click to edit.':
+        "Une flèche va d'un fichier vers les pièces qu'il utilise. Clic pour sélectionner, double-clic pour modifier.",
+    'Ask for it':
+        'La demander',
+    'Ask for the part':
+        'Demander la pièce',
+    'Ask the person editing it to release it':
+        'Demander à la personne qui la modifie de la libérer',
+    'Ask the person editing the selected part to release it':
+        'Demander à la personne qui modifie la pièce sélectionnée de la libérer',
+    'Broken link: {file} not found':
+        'Lien cassé : {file} introuvable',
+    'Cannot move {name}: {parts} locked by others.':
+        "Impossible de déplacer {name} : {parts} verrouillé par quelqu'un d'autre.",
+    'Choose a folder inside the project.':
+        'Choisissez un dossier dans le projet.',
+    'Crossed locks: {who} took {name} at the same time as you. Agree on who keeps it before saving.':
+        "Verrous croisés : {who} a pris {name} en même temps que vous. Mettez-vous d'accord sur qui la garde avant d'enregistrer.",
+    'Filter (name, folder or #tag)':
+        'Filtrer (nom, dossier ou #tag)',
+    'Folders':
+        'Dossiers',
+    'Hide from the tree the files an assembly loads':
+        "Masquer dans l'arborescence les fichiers chargés par un assemblage",
+    'Hide parts without links':
+        'Masquer les pièces sans lien',
+    'Links between parts':
+        'Liens entre les pièces',
+    'More':
+        'Plus',
+    'Move to folder...':
+        'Déplacer vers un dossier...',
+    'Move {name} to':
+        'Déplacer {name} vers',
+    'New name for {name}:':
+        'Nouveau nom pour {name} :',
+    'No links between the parts of this project.':
+        'Aucun lien entre les pièces de ce projet.',
+    'Not now':
+        'Pas maintenant',
+    'Notify me when a part is locked, released or asked for':
+        'Me prévenir quand une pièce est verrouillée, libérée ou demandée',
+    'Part':
+        'Pièce',
+    'Refuse changes to parts I have not locked':
+        "Refuser les modifications des pièces que je n'ai pas verrouillées",
+    'Release it':
+        'La libérer',
+    'Reload parts saved by others automatically':
+        'Recharger automatiquement les pièces enregistrées par les autres',
+    'Rename...':
+        'Renommer...',
+    'Request sent to {user} for {name}.':
+        'Demande envoyée à {user} pour {name}.',
+    'Requested by {user}':
+        'Demandée par {user}',
+    'Save or close {name} first.':
+        "Enregistrez ou fermez d'abord {name}.",
+    'Show the links between parts':
+        'Afficher les liens entre les pièces',
+    'Show which file uses which part, coloured by who edits them':
+        'Quel fichier utilise quelle pièce, en couleur selon qui les modifie',
+    'State':
+        'État',
+    'Switch between folders and thumbnails':
+        'Basculer entre dossiers et vignettes',
+    'Tags for {name}, separated by spaces (known: {known}):':
+        'Tags de {name}, séparés par des espaces (existants : {known}) :',
+    'Tags...':
+        'Tags...',
+    'Thumbnails':
+        'Vignettes',
+    'You can ask for it, open it read-only, or take the lock if you are sure that person no longer works on it (their unsaved work would be lost when they save).':
+        "Vous pouvez la demander, l'ouvrir en lecture seule, ou prendre le verrou s'il est certain que cette personne n'y travaille plus (son travail non enregistré serait perdu quand elle enregistrera).",
+    '{count} broken links: a linked file was moved or deleted.':
+        '{count} liens cassés : un fichier lié a été déplacé ou supprimé.',
+    '{name} already exists.':
+        '{name} existe déjà.',
+    '{name} is free: you can take it.':
+        '{name} est libre : vous pouvez la prendre.',
+    '{name} is locked by {who}: it cannot be changed.':
+        '{name} est verrouillée par {who} : impossible de la modifier.',
+    '{name} is not locked: click Edit (CoBench) before changing it.':
+        "{name} n'est pas verrouillée : cliquez sur Modifier (CoBench) avant de la changer.",
+    '{name} updated (saved by {user}).':
+        '{name} mise à jour (enregistrée par {user}).',
+    '{name} updated.':
+        '{name} mise à jour.',
+    '{name} was locked by someone a moment ago.':
+        "{name} vient d'être verrouillée par quelqu'un.",
+    '{old} moved to {new}; {count} files relinked.':
+        '{old} déplacée vers {new} ; {count} fichiers reliés.',
+    '{user} keeps {name} for now.':
+        '{user} garde {name} pour le moment.',
+    '{user} released {name}.':
+        '{user} a libéré {name}.',
+    '{user} took {name}.':
+        '{user} a pris {name}.',
+    '{user} would like to edit {name}.':
+        '{user} voudrait modifier {name}.',
 }
 
 CATALOGS = {"French": FR}

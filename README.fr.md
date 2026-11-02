@@ -17,6 +17,19 @@ dépend d'aucun d'eux.
   par pièce, un `Variables.FCStd` avec tous les VarSets et tableurs (les pièces continuent à
   les lire : changer une cote met tout à jour) et un `Assemblage.FCStd` qui relie les pièces
   à leur place. Le fichier d'origine n'est pas modifié.
+- **On ne modifie que ce qu'on a verrouillé.** Une pièce non verrouillée ne peut pas être
+  changée : le mode édition est refusé avant l'ouverture de son panneau, et toute autre
+  modification est annulée aussitôt (option).
+- **Projet vivant.** Toutes les quelques secondes, CoBench regarde le dossier : les pièces
+  enregistrées par les autres sont rechargées dès que le fichier est complètement arrivé, et
+  un message signale quand quelqu'un prend ou libère une pièce. *La demander* envoie une
+  demande à la personne qui modifie une pièce ; elle répond *La libérer* ou *Pas maintenant*.
+- **Dossiers, tags et liens.** Le panneau range les pièces par dossier (ou en vignettes),
+  filtre par nom ou par `#tag`, signale les liens cassés et dessine les liens entre pièces.
+  Renommez ou déplacez une pièce depuis le panneau : tous les fichiers qui l'utilisent sont
+  reliés à nouveau.
+- **Arborescence propre.** Les fichiers chargés par un assemblage n'encombrent plus
+  l'arborescence de FreeCAD.
 
 FreeCAD 1.0 ou plus récent. Interface en français et en anglais (suit la langue de FreeCAD).
 
@@ -46,8 +59,10 @@ Avec git : `git clone https://github.com/LMGerard/CoBench` dans ce dossier `Mod`
 4. *Ouvrir l'assemblage central* montre qui travaille sur quoi. Double-cliquez une pièce
    dans la vue 3D, ou sélectionnez-la puis *Modifier la pièce* (aussi au clic droit).
 
-Une fois l'atelier chargé, les verrous sont gérés dans tous les ateliers : fermer une pièce
-la libère, et enregistrer une pièce libre d'un projet la verrouille.
+CoBench démarre avec FreeCAD : verrous, protection et notifications fonctionnent dans tous
+les ateliers, même sans jamais ouvrir l'atelier CoBench. Fermer une pièce la libère, et
+enregistrer une pièce libre du projet la verrouille. Chaque option se désactive dans
+*Mon nom et options*.
 
 ### Couleurs
 

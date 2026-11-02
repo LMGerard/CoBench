@@ -20,6 +20,7 @@ class Project:
         self.root = os.path.abspath(root)
         self.name = os.path.basename(self.root.rstrip("\\/")) or self.root
         self.assembly = ""  # path relative to root, "/" separators
+        self.tags = {}      # relative path -> [tag, ...]
         self.load()
 
     # -- project file ------------------------------------------------------
@@ -36,10 +37,15 @@ class Project:
         if isinstance(data, dict):
             self.name = str(data.get("name") or self.name)
             self.assembly = str(data.get("assembly") or "")
+            tags = data.get("tags") or {}
+            if isinstance(tags, dict):
+                self.tags = {str(k): [str(t) for t in v] for k, v in tags.items() if isinstance(v, list)}
         return True
 
     def save(self):
         data = {"format": 1, "name": self.name, "assembly": self.assembly}
+        if self.tags:
+            data["tags"] = {k: v for k, v in sorted(self.tags.items()) if v}
         tmp = self.project_file + ".tmp"
         with open(tmp, "w", encoding="utf-8") as stream:
             json.dump(data, stream, indent=1, ensure_ascii=False)
@@ -63,7 +69,38 @@ class Project:
         return self.abs(self.assembly) if self.assembly else ""
 
     def set_assembly(self, path):
+        self.load()  # keep what others saved meanwhile (tags)
         self.assembly = self.rel(path) if path else ""
+        self.save()
+
+    # -- tags ----------------------------------------------------------------
+    def tags_of(self, path):
+        return list(self.tags.get(self.rel(path), []))
+
+    def set_tags(self, path, tags):
+        clean = []
+        for tag in tags:
+            tag = tag.strip().lstrip("#").strip()
+            if tag and tag not in clean:
+                clean.append(tag)
+        self.load()  # keep what others saved meanwhile
+        if clean:
+            self.tags[self.rel(path)] = clean
+        else:
+            self.tags.pop(self.rel(path), None)
+        self.save()
+
+    def all_tags(self):
+        return sorted({t for tags in self.tags.values() for t in tags}, key=str.lower)
+
+    def moved(self, old_path, new_path):
+        """Keep the project file in step when a part is moved or renamed."""
+        old_rel, new_rel = self.rel(old_path), self.rel(new_path)
+        self.load()
+        if old_rel in self.tags:
+            self.tags[new_rel] = self.tags.pop(old_rel)
+        if self.assembly == old_rel:
+            self.assembly = new_rel
         self.save()
 
     # -- content -----------------------------------------------------------
@@ -98,6 +135,20 @@ class Project:
                     targets.append(resolved)
             graph[part] = targets
         return graph
+
+    def missing_links(self, parts=None):
+        """{part: [absolute paths of linked files that do not exist]}"""
+        parts = parts if parts is not None else self.parts()
+        missing = {}
+        for part in parts:
+            gone = []
+            for target in fcstd.read_part(part).links:
+                resolved = fcstd.resolve_link(part, target)
+                if not os.path.exists(resolved) and resolved not in gone:
+                    gone.append(resolved)
+            if gone:
+                missing[part] = gone
+        return missing
 
     def used_in(self, graph):
         """{part: [parts that link to it]}"""

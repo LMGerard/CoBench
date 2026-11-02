@@ -48,8 +48,8 @@ Gui.addWorkbench(CoBenchWorkbench())
 def _start_session():
     """Watch saves and closes from FreeCAD start, whatever the workbench."""
     try:
-        from cobench.gui import session
-        session.get()
+        from cobench.gui import commands
+        commands.start()
     except Exception as exc:  # never break FreeCAD start-up
         import FreeCAD
         FreeCAD.Console.PrintWarning("CoBench: %s\n" % exc)

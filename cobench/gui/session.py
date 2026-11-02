@@ -1,19 +1,28 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 """One CoBench session per FreeCAD run.
 
-The session owns the locks taken by this FreeCAD, watches documents being
-opened, saved and closed in every workbench, and tells the panel and the
-assembly overlay when something changes.
+The session starts with FreeCAD, whatever the workbench.  It owns the locks
+taken by this FreeCAD and, every few seconds, looks at the project folder:
+
+* lock changes of the others (notifications, crossed locks);
+* parts saved by others, reloaded once the file is stable;
+* requests to release a part.
+
+It also refuses changes to project files that are not locked by this
+FreeCAD: entering edit mode is stopped before the task panel opens, and any
+other change is undone as soon as its command ends.
 """
 
 import atexit
+import contextlib
+import datetime
 import os
 import uuid
 
 import FreeCAD as App
 import FreeCADGui as Gui
 
-from ..core import locks
+from ..core import fcstd, locks, requests
 from ..core.identity import Identity
 from ..core.project import Project, find_root
 from ..i18n import tr
@@ -21,6 +30,9 @@ from . import prefs
 from .qt import QtCore, QtWidgets
 
 _session = None
+
+# Property changes that never need a lock (showing/hiding a part).
+FREE_PROPERTIES = {"Visibility"}
 
 
 def get():
@@ -56,9 +68,9 @@ def status_message(text, msecs=8000):
     App.Console.PrintMessage("CoBench: %s\n" % text)
 
 
-def later(function):
+def later(function, msecs=0):
     """Run after the current FreeCAD call returns (never inside a save)."""
-    QtCore.QTimer.singleShot(0, function)
+    QtCore.QTimer.singleShot(msecs, function)
 
 
 def who(info):
@@ -76,9 +88,11 @@ def lock_time(info):
 def describe_lock(info):
     if info is None:
         return ""
-    since = info.since_datetime()
-    when = since.astimezone().strftime("%d/%m/%Y %H:%M") if since else "?"
-    return tr("{user} on {host}, since {when}", user=info.user, host=info.host, when=when)
+    return tr("{user} on {host}, since {when}", user=info.user, host=info.host, when=lock_time(info))
+
+
+def _stem(path):
+    return os.path.splitext(os.path.basename(path))[0]
 
 
 class Session:
@@ -88,17 +102,39 @@ class Session:
         self.identity = Identity(prefs.user_name())
         self.locks = locks.LockManager(self.identity, self.session_id, "FreeCAD " + version)
         self.project = None
-        self.loaded = {}        # normalised path -> mtime when loaded or saved by us
-        self.listeners = []     # callables run when locks or documents change
+        self.parts = []           # project parts found at the last tick
+        self.states = {}          # part path -> LockState at the last tick
+        self.loaded = {}          # normalised path -> mtime when loaded or saved by us
+        self.shown = set()        # normalised paths opened on purpose (kept in the tree)
+        self.listeners = []       # callables run when locks or documents change
         self.recompute_listeners = []
+        self.activity = []        # (time, text), newest last
+        self._pending_reload = {}  # normalised path -> mtime seen at the previous tick
+        self._newer_told = {}     # normalised path -> mtime already reported as newer
+        self._crossed_told = set()
+        self._requests_seen = set()
+        self._last_holder = {}    # part path -> user name of the last other holder seen
+        self._quiet = 0
+        self._tx = {}             # document name -> {"bad": bool, "checked": bool}
+        self._recomputing = set()
+        self._last_refusal = {}
         self.observer = _DocumentObserver(self)
         App.addDocumentObserver(self.observer)
+        self.gui_observer = _GuiObserver(self)
+        try:
+            Gui.addDocumentObserver(self.gui_observer)
+        except Exception:
+            pass
         for doc in App.listDocuments().values():
             self.remember(doc)
         atexit.register(self.shutdown)
         last = prefs.last_project()
         if last and os.path.isdir(last):
             self.project = Project(last)
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self.tick)
+        self.timer.start(prefs.refresh_seconds() * 1000)
+        later(self.tick, 500)
 
     # -- notifications -----------------------------------------------------
     def changed(self):
@@ -107,6 +143,31 @@ class Session:
                 listener()
             except Exception as exc:  # a closed widget must not break FreeCAD
                 App.Console.PrintWarning("CoBench: %s\n" % exc)
+
+    def notify(self, text, warning=False):
+        self.activity.append((datetime.datetime.now(), text))
+        del self.activity[:-50]
+        window = main_window()
+        if window is not None:
+            window.statusBar().showMessage(text, 10000)
+        if not prefs.notifications():
+            App.Console.PrintMessage("CoBench: %s\n" % text)
+            return
+        if warning:
+            App.Console.PrintWarning("CoBench: %s\n" % text)
+        elif hasattr(App.Console, "PrintNotification"):
+            App.Console.PrintNotification("CoBench: %s\n" % text)
+        else:
+            App.Console.PrintMessage("CoBench: %s\n" % text)
+
+    @contextlib.contextmanager
+    def quiet(self):
+        """CoBench's own changes: no blocking, no reload."""
+        self._quiet += 1
+        try:
+            yield
+        finally:
+            self._quiet -= 1
 
     # -- identity and project ----------------------------------------------
     def set_user(self, name):
@@ -119,7 +180,7 @@ class Session:
             info = locks.LockInfo.read(locks.lock_path(part))
             if info is not None and info.session == self.session_id and info.user == old.user:
                 self.locks.force(part)
-        self.changed()
+        self.tick()
 
     def open_project(self, folder):
         root = find_root(folder) or folder
@@ -133,7 +194,8 @@ class Session:
             except OSError as exc:
                 App.Console.PrintWarning("CoBench: %s\n" % exc)
         prefs.set_last_project(self.project.root)
-        self.changed()
+        self.states = {}
+        self.tick()
         return self.project
 
     def managed(self, path):
@@ -143,6 +205,16 @@ class Session:
         if self.project and self.project.contains(path):
             return True
         return find_root(path) is not None
+
+    def editable(self, doc):
+        """False for a project file this FreeCAD has not locked."""
+        path = getattr(doc, "FileName", "")
+        if not path or not self.managed(path):
+            return True
+        return self.locks.state(path).status == locks.MINE
+
+    def state(self, path):
+        return self.states.get(path) or self.locks.state(path)
 
     # -- documents -----------------------------------------------------------
     def remember(self, doc):
@@ -170,6 +242,21 @@ class Session:
         except Exception:
             return False
 
+    def dependents(self, path):
+        """Open documents that use the file (assemblies, parts reading Variables)."""
+        target = _norm(path)
+        users = []
+        for doc in App.listDocuments().values():
+            if not doc.FileName or _norm(doc.FileName) == target:
+                continue
+            try:
+                deps = doc.getDependentDocuments(False)
+            except Exception:
+                deps = []
+            if any(d.FileName and _norm(d.FileName) == target for d in deps):
+                users.append(doc)
+        return users
+
     def _show(self, doc):
         """Make the document the active tab, creating a 3D view if it has none."""
         App.setActiveDocument(doc.Name)
@@ -193,12 +280,32 @@ class Session:
                 area.setActiveSubWindow(sub)
                 break
 
+    def _reopen(self, doc, show):
+        """Close and open again from disk; dependents are recomputed."""
+        path = doc.FileName
+        users = self.dependents(path)
+        active = App.ActiveDocument.Name if App.ActiveDocument else None
+        with self.quiet():
+            App.closeDocument(doc.Name)
+            new = App.openDocument(path)
+            self.remember(new)
+            for user in users:
+                try:
+                    user.recompute()
+                except Exception:
+                    pass
+        if show:
+            self._show(new)
+        elif active and active in App.listDocuments():
+            self._show(App.getDocument(active))
+        return new
+
     def _load(self, path, reload_if_changed=True):
         """Open the document, or bring back the loaded copy (reloaded if stale)."""
+        self.shown.add(_norm(path))
         doc = self.find_document(path)
         if doc is not None and getattr(doc, "Partial", False):
-            App.closeDocument(doc.Name)
-            doc = None
+            return self._reopen(doc, True)
         if doc is not None and reload_if_changed and self.changed_on_disk(doc):
             name = os.path.basename(path)
             if self.is_modified(doc):
@@ -209,12 +316,13 @@ class Session:
                     QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
                     QtWidgets.QMessageBox.No)
                 if answer != QtWidgets.QMessageBox.Yes:
+                    self._show(doc)
                     return doc
-            App.closeDocument(doc.Name)
-            doc = None
             status_message(tr("{name} reloaded: it had changed on disk.", name=name))
+            return self._reopen(doc, True)
         if doc is None:
-            doc = App.openDocument(path)
+            with self.quiet():
+                doc = App.openDocument(path)
             self.remember(doc)
         self._show(doc)
         return doc
@@ -229,14 +337,19 @@ class Session:
             box.setIcon(QtWidgets.QMessageBox.Warning)
             box.setWindowTitle("CoBench")
             box.setText(tr("{name} is being edited by {who}.", name=name, who=who(state.info)))
-            box.setInformativeText(tr("Locked since {when}.", when=lock_time(state.info)) + "\n\n" + tr("You can open it read-only, or take the lock if you are sure "
-                                      "that person no longer works on it (their unsaved work would "
-                                      "be lost when they save)."))
+            box.setInformativeText(
+                tr("Locked since {when}.", when=lock_time(state.info)) + "\n\n"
+                + tr("You can ask for it, open it read-only, or take the lock if you are sure that "
+                     "person no longer works on it (their unsaved work would be lost when they save)."))
+            ask = box.addButton(tr("Ask for it"), QtWidgets.QMessageBox.ActionRole)
             view = box.addButton(tr("Open read-only"), QtWidgets.QMessageBox.AcceptRole)
             take = box.addButton(tr("Take the lock"), QtWidgets.QMessageBox.DestructiveRole)
             box.addButton(QtWidgets.QMessageBox.Cancel)
-            box.setDefaultButton(view)
+            box.setDefaultButton(ask)
             box.exec()
+            if box.clickedButton() is ask:
+                self.ask_for(path)
+                return None
             if box.clickedButton() is view:
                 return self.view(path)
             if box.clickedButton() is not take:
@@ -248,17 +361,17 @@ class Session:
             QtWidgets.QMessageBox.warning(
                 main_window(), "CoBench",
                 tr("{name} was locked by {who} a moment ago.", name=name, who=who(state.info)))
-            self.changed()
+            self.tick()
             return None
         locks.set_read_only(path, False)
         try:
             doc = self._load(path)
         except Exception:
             self.locks.release(path)
-            self.changed()
+            self.tick()
             raise
         status_message(tr("{name} locked: you can edit it.", name=name))
-        self.changed()
+        self.tick()
         return doc
 
     def view(self, path):
@@ -269,7 +382,13 @@ class Session:
         if state.status == locks.OTHER and was_open:
             status_message(tr("{name} opened read-only: {who} is editing it.",
                               name=os.path.basename(path), who=who(state.info)))
-        self.changed()
+        self.tick()
+        return doc
+
+    def open_assembly(self, path):
+        """Open an assembly; the parts it loads stay out of the tree."""
+        doc = self.view(path)
+        later(self.tick, 200)
         return doc
 
     def release(self, path, ask=True):
@@ -285,9 +404,15 @@ class Session:
                 return False
             if answer == QtWidgets.QMessageBox.Save:
                 doc.save()
+            elif answer == QtWidgets.QMessageBox.Discard:
+                # Back to the saved version: others will see exactly that file.
+                self._reopen(doc, False)
         self.locks.release(path)
+        request = requests.Request.read(path)
+        if request is not None and not self.identity.same_as(request.user, request.host):
+            requests.clear(path)
         status_message(tr("{name} released.", name=os.path.basename(path)))
-        self.changed()
+        self.tick()
         return True
 
     def take_over(self, path):
@@ -303,8 +428,85 @@ class Session:
                 return False
         self.locks.force(path)
         locks.set_read_only(path, False)
-        self.changed()
+        self.tick()
         return True
+
+    def ask_for(self, path):
+        """Ask the holder to release the part."""
+        state = self.locks.state(path)
+        if state.status != locks.OTHER:
+            return False
+        requests.write(path, self.identity)
+        self.notify(tr("Request sent to {user} for {name}.", user=state.info.user, name=_stem(path)))
+        self.tick()
+        return True
+
+    def move(self, path, new_path):
+        """Move or rename a part and repair every link to it.
+
+        The part and every file linking to it must be free or ours: they are
+        locked for the time of the move, saved, and given back.
+        """
+        project = self.project
+        name = os.path.basename(path)
+        if os.path.exists(new_path):
+            raise RuntimeError(tr("{name} already exists.", name=project.rel(new_path)))
+        graph = project.link_graph(project.parts())
+        users = project.used_in(graph).get(path, [])
+        blocked = [p for p in [path] + users if self.locks.state(p).status == locks.OTHER]
+        if blocked:
+            raise RuntimeError(tr("Cannot move {name}: {parts} locked by others.", name=name,
+                                  parts=", ".join(_stem(p) for p in blocked)))
+        for doc_path in [path] + users:
+            doc = self.find_document(doc_path)
+            if doc is not None and self.is_modified(doc) and not self.locks.holds(doc_path):
+                raise RuntimeError(tr("Save or close {name} first.", name=os.path.basename(doc_path)))
+        mine_before = {p for p in [path] + users if self.locks.state(p).status == locks.MINE}
+        taken = []
+        try:
+            for doc_path in [path] + users:
+                if doc_path not in mine_before:
+                    if self.locks.acquire(doc_path).status != locks.MINE:
+                        raise RuntimeError(tr("{name} was locked by someone a moment ago.",
+                                              name=os.path.basename(doc_path)))
+                    taken.append(doc_path)
+                locks.set_read_only(doc_path, False)
+            with self.quiet():
+                docs = {}
+                for doc_path in [path] + users:
+                    doc = self.find_document(doc_path)
+                    if doc is None:
+                        doc = App.openDocument(doc_path, hidden=True)
+                        self.remember(doc)
+                    docs[doc_path] = doc
+                os.makedirs(os.path.dirname(new_path), exist_ok=True)
+                part_doc = docs[path]
+                part_doc.saveAs(new_path)  # FreeCAD relinks the open documents using it
+                self.remember(part_doc)
+                for user in users:
+                    docs[user].save()
+                    self.remember(docs[user])
+            # The new file was locked by the save; the old one goes away.
+            locks.set_read_only(path, False)
+            os.remove(path)
+            self.locks.release(path)
+            requests.clear(path)
+            project.moved(path, new_path)
+            if path in mine_before:
+                self.locks.acquire(new_path)
+            else:
+                self.locks.release(new_path)
+            if _norm(path) in self.shown:
+                self.shown.discard(_norm(path))
+                self.shown.add(_norm(new_path))
+        finally:
+            for doc_path in taken:
+                if doc_path != path:
+                    self.locks.release(doc_path)
+        self.notify(tr("{old} moved to {new}; {count} files relinked.",
+                       old=project.rel(path), new=project.rel(new_path), count=len(users)))
+        self.tick()
+        return new_path
 
     def apply_protection(self, path, state):
         """Read-only on disk while someone else holds the part."""
@@ -323,6 +525,195 @@ class Session:
         except Exception:
             pass
 
+    # -- periodic look at the folder ----------------------------------------
+    def tick(self):
+        try:
+            self._tick()
+        except Exception as exc:
+            App.Console.PrintWarning("CoBench: %s\n" % exc)
+        self.changed()
+
+    def _tick(self):
+        project = self.project
+        if project is None:
+            self.parts, self.states = [], {}
+            return
+        parts = project.parts()
+        previous = self.states
+        states = {}
+        for path in parts:
+            state = self.locks.state(path)
+            states[path] = state
+            self.apply_protection(path, state)
+            if previous:
+                self._compare(path, previous.get(path), state)
+            if state.status == locks.OTHER and state.info:
+                self._last_holder[path] = state.info.user
+        self.parts, self.states = parts, states
+        self._check_requests(parts, states)
+        self._reload_changed()
+
+    def _compare(self, path, before, now):
+        name = _stem(path)
+        if self.locks.holds(path) and now.status == locks.OTHER:
+            key = (path, now.info.since if now.info else "")
+            if key not in self._crossed_told:
+                self._crossed_told.add(key)
+                text = tr("Crossed locks: {who} took {name} at the same time as you. Agree on who "
+                          "keeps it before saving.", who=who(now.info), name=name)
+                self.notify(text, warning=True)
+                later(lambda: QtWidgets.QMessageBox.warning(main_window(), "CoBench", text))
+            return
+        if before is None:
+            return
+        if before.status == locks.OTHER and now.status == locks.FREE:
+            self.notify(tr("{user} released {name}.", user=before.info.user if before.info else "?",
+                           name=name))
+        elif before.status == locks.FREE and now.status == locks.OTHER:
+            self.notify(tr("{user} took {name}.", user=now.info.user if now.info else "?", name=name))
+
+    def _check_requests(self, parts, states):
+        for path in parts:
+            request = requests.Request.read(path)
+            if request is None:
+                continue
+            state = states[path]
+            mine_request = self.identity.same_as(request.user, request.host)
+            if mine_request:
+                if request.status == requests.DECLINED:
+                    holder = state.info.user if state.info else "?"
+                    requests.clear(path)
+                    self.notify(tr("{user} keeps {name} for now.", user=holder, name=_stem(path)))
+                elif state.status in (locks.FREE, locks.ORPHAN):
+                    requests.clear(path)
+                    self.notify(tr("{name} is free: you can take it.", name=_stem(path)))
+                continue
+            if state.status == locks.MINE and request.status == requests.PENDING:
+                if request.key not in self._requests_seen:
+                    self._requests_seen.add(request.key)
+                    later(lambda p=path, r=request: self._answer_request(p, r))
+
+    def _answer_request(self, path, request):
+        box = QtWidgets.QMessageBox(main_window())
+        box.setIcon(QtWidgets.QMessageBox.Question)
+        box.setWindowTitle("CoBench")
+        box.setText(tr("{user} would like to edit {name}.", user=request.user, name=_stem(path)))
+        give = box.addButton(tr("Release it"), QtWidgets.QMessageBox.AcceptRole)
+        box.addButton(tr("Not now"), QtWidgets.QMessageBox.RejectRole)
+        box.setDefaultButton(give)
+        box.exec()
+        if box.clickedButton() is give:
+            if self.release(path):
+                return
+        requests.decline(path, request)
+        self.tick()
+
+    def _reload_changed(self):
+        """Reload parts saved by others, once the synchronised file is complete."""
+        if self._quiet or not prefs.auto_reload():
+            return
+        for doc in list(App.listDocuments().values()):
+            path = doc.FileName
+            if not path or not self.project.contains(path) or not self.changed_on_disk(doc):
+                self._pending_reload.pop(_norm(path) if path else None, None)
+                continue
+            key = _norm(path)
+            mtime = _mtime(path)
+            if self._pending_reload.get(key) != mtime:
+                self._pending_reload[key] = mtime  # wait until it stops changing
+                continue
+            if fcstd.read_part(path).error:
+                continue  # still being written
+            name = _stem(path)
+            if self.is_modified(doc) or self.locks.holds(path):
+                if self._newer_told.get(key) != mtime:
+                    self._newer_told[key] = mtime
+                    self.notify(tr("A newer {name} was saved by someone else; your copy has "
+                                   "unsaved changes and was not reloaded.", name=name), warning=True)
+                continue
+            self._pending_reload.pop(key, None)
+            author = fcstd.read_part(path).meta.get("LastModifiedBy") or self._last_holder.get(path, "")
+            self._reopen(doc, show=False)
+            if author:
+                self.notify(tr("{name} updated (saved by {user}).", name=name, user=author))
+            else:
+                self.notify(tr("{name} updated.", name=name))
+
+    # -- blocking changes to files not locked --------------------------------
+    def refuse(self, doc, action=""):
+        path = doc.FileName
+        name = _stem(path)
+        state = self.locks.state(path)
+        if state.status == locks.OTHER:
+            text = tr("{name} is locked by {who}: it cannot be changed.", name=name, who=who(state.info))
+        else:
+            text = tr("{name} is not locked: click Edit (CoBench) before changing it.", name=name)
+        status_message(text)
+        now = datetime.datetime.now()
+        last = self._last_refusal.get(path)
+        if last is None or (now - last).total_seconds() > 20:
+            self._last_refusal[path] = now
+            QtWidgets.QMessageBox.information(main_window(), "CoBench", text)
+
+    def on_open_transaction(self, doc, name):
+        if self._quiet or not prefs.strict():
+            return
+        self._tx[doc.Name] = {"bad": False, "checked": False}
+
+    def on_changed(self, obj, prop):
+        if self._quiet or prop in FREE_PROPERTIES:
+            return
+        doc = obj.Document
+        if doc.Name in self._recomputing:
+            return
+        tx = self._tx.get(doc.Name)
+        if tx is None or tx["checked"]:
+            return
+        tx["checked"] = True
+        if not self.editable(doc):
+            tx["bad"] = True
+
+    def on_commit(self, doc):
+        tx = self._tx.pop(doc.Name, None)
+        if tx and tx["bad"]:
+            later(lambda: self._undo(doc))
+
+    def on_abort(self, doc):
+        self._tx.pop(doc.Name, None)
+
+    def _undo(self, doc):
+        try:
+            with self.quiet():
+                doc.undo()
+                doc.recompute()
+        except Exception as exc:
+            App.Console.PrintWarning("CoBench: %s\n" % exc)
+        self.refuse(doc)
+
+    def on_in_edit(self, view_provider):
+        if self._quiet or not prefs.strict():
+            return
+        doc = view_provider.Object.Document
+        if self.editable(doc):
+            return
+
+        def stop():
+            with self.quiet():
+                try:
+                    Gui.Control.closeDialog()
+                except Exception:
+                    pass
+                try:
+                    Gui.getDocument(doc.Name).resetEdit()
+                except Exception:
+                    pass
+                try:
+                    doc.abortTransaction()
+                except Exception:
+                    pass
+            self.refuse(doc)
+        later(stop)
+
     # -- document events -----------------------------------------------------
     def on_opened(self, doc):
         self.remember(doc)
@@ -333,14 +724,17 @@ class Session:
                 later(lambda: status_message(
                     tr("{name} opened read-only: {who} is editing it.",
                        name=os.path.basename(path), who=who(state.info))))
-            self.changed()
+        later(self.changed, 100)  # the tree shows every new document: hide again
 
     def on_closed(self, doc):
         path = getattr(doc, "FileName", "")
+        self._tx.pop(getattr(doc, "Name", ""), None)
         if not path:
             return
         self.loaded.pop(_norm(path), None)
-        if self.locks.holds(path):
+        if not self._quiet:
+            self.shown.discard(_norm(path))
+        if self.locks.holds(path) and not self._quiet:
             self.locks.release(path)
             later(lambda: status_message(tr("{name} released.", name=os.path.basename(path))))
         later(self.changed)
@@ -362,9 +756,10 @@ class Session:
         if state.status in (locks.FREE, locks.ORPHAN):
             locks.set_read_only(path, False)
             self.locks.acquire(path)
-            later(lambda: status_message(tr("{name} saved and locked: release it when you are done.",
-                                            name=name)))
-        if stale:
+            if not self._quiet:
+                later(lambda: status_message(tr("{name} saved and locked: release it when you are done.",
+                                                name=name)))
+        if stale and not self._quiet:
             later(lambda: QtWidgets.QMessageBox.warning(
                 main_window(), "CoBench",
                 tr("{name} had been saved by someone else after you opened it. Your save replaced "
@@ -374,7 +769,11 @@ class Session:
         self.loaded[_norm(path)] = _mtime(path)
         later(self.changed)
 
+    def on_recomputing(self, doc):
+        self._recomputing.add(doc.Name)
+
     def on_recomputed(self, doc):
+        self._recomputing.discard(doc.Name)
         for listener in list(self.recompute_listeners):
             try:
                 listener(doc)
@@ -410,8 +809,36 @@ class _DocumentObserver:
     def slotFinishSaveDocument(self, doc, path):
         self._safe(self.session.on_saved, doc, path)
 
+    def slotBeforeRecomputeDocument(self, doc):
+        self._safe(self.session.on_recomputing, doc)
+
     def slotRecomputedDocument(self, doc):
         self._safe(self.session.on_recomputed, doc)
+
+    def slotOpenTransaction(self, doc, name):
+        self._safe(self.session.on_open_transaction, doc, name)
+
+    def slotCommitTransaction(self, doc):
+        self._safe(self.session.on_commit, doc)
+
+    def slotAbortTransaction(self, doc):
+        self._safe(self.session.on_abort, doc)
+
+    def slotChangedObject(self, obj, prop):
+        self._safe(self.session.on_changed, obj, prop)
+
+
+class _GuiObserver:
+    """FreeCAD calls these methods by name (Gui.addDocumentObserver)."""
+
+    def __init__(self, session):
+        self.session = session
+
+    def slotInEdit(self, view_provider):
+        try:
+            self.session.on_in_edit(view_provider)
+        except Exception as exc:
+            App.Console.PrintWarning("CoBench: %s\n" % exc)
 
 
 def _alive(doc):

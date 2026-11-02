@@ -10,14 +10,18 @@ from . import assembly, panel, prefs, session as session_mod
 from .qt import QtWidgets
 
 _watcher = None
+_tree = None
 
 
 def start():
-    """Session, panel and assembly watcher, created once."""
-    global _watcher
+    """Session, assembly boxes and tree cleaning, created once."""
+    global _watcher, _tree
     session = session_mod.get()
     if _watcher is None:
         _watcher = assembly.AssemblyWatcher(session, panel.current_panel)
+    if _tree is None:
+        from .tree import TreeHider
+        _tree = TreeHider(session)
     return session
 
 
@@ -69,6 +73,34 @@ class OpenAssembly(_Command):
     def Activated(self):
         start()
         panel.show_panel().open_assembly()
+
+
+class ShowGraph(_Command):
+    icon = "graph"
+    menu = "Links between parts"
+    tip = "Show which file uses which part, coloured by who edits them"
+
+    def IsActive(self):
+        return session_mod.get().project is not None
+
+    def Activated(self):
+        start()
+        panel.show_panel().show_graph()
+
+
+class AskForPart(_Command):
+    icon = "edit"
+    menu = "Ask for the part"
+    tip = "Ask the person editing the selected part to release it"
+
+    def IsActive(self):
+        return App.ActiveDocument is not None
+
+    def Activated(self):
+        session = start()
+        path = assembly.selected_part(session)
+        if path:
+            session.ask_for(path)
 
 
 class SetAssembly(_Command):
@@ -178,6 +210,18 @@ class SettingsDialog(QtWidgets.QDialog):
         self.overlay = QtWidgets.QCheckBox(tr("Show locks as coloured boxes in assemblies"))
         self.overlay.setChecked(prefs.show_overlay())
         form.addRow(self.overlay)
+        self.strict = QtWidgets.QCheckBox(tr("Refuse changes to parts I have not locked"))
+        self.strict.setChecked(prefs.strict())
+        form.addRow(self.strict)
+        self.reload = QtWidgets.QCheckBox(tr("Reload parts saved by others automatically"))
+        self.reload.setChecked(prefs.auto_reload())
+        form.addRow(self.reload)
+        self.notifications = QtWidgets.QCheckBox(tr("Notify me when a part is locked, released or asked for"))
+        self.notifications.setChecked(prefs.notifications())
+        form.addRow(self.notifications)
+        self.hide = QtWidgets.QCheckBox(tr("Hide from the tree the files an assembly loads"))
+        self.hide.setChecked(prefs.hide_dependencies())
+        form.addRow(self.hide)
         host = QtWidgets.QLabel(tr("Computer: {host}", host=session.identity.host))
         host.setEnabled(False)
         form.addRow(host)
@@ -194,6 +238,10 @@ class SettingsDialog(QtWidgets.QDialog):
             prefs.set_freecad_author(name)
         prefs.set_protect_files(self.protect.isChecked())
         prefs.set_show_overlay(self.overlay.isChecked())
+        prefs.set_strict(self.strict.isChecked())
+        prefs.set_auto_reload(self.reload.isChecked())
+        prefs.set_notifications(self.notifications.isChecked())
+        prefs.set_hide_dependencies(self.hide.isChecked())
         if not self.protect.isChecked() and self.session.project:
             for part in self.session.project.parts():
                 if locks.is_read_only(part):
@@ -211,13 +259,16 @@ COMMANDS = {
     "CoBench_ReleasePart": ReleasePart(),
     "CoBench_ReleaseAll": ReleaseAll(),
     "CoBench_SplitDocument": SplitDocument(),
+    "CoBench_ShowGraph": ShowGraph(),
+    "CoBench_AskForPart": AskForPart(),
     "CoBench_Settings": Settings(),
 }
 
-TOOLBAR = ["CoBench_ShowPanel", "CoBench_OpenProject", "CoBench_OpenAssembly",
+TOOLBAR = ["CoBench_ShowPanel", "CoBench_OpenProject", "CoBench_OpenAssembly", "CoBench_ShowGraph",
            "CoBench_EditPart", "CoBench_ReleasePart", "CoBench_SplitDocument"]
 MENU = ["CoBench_ShowPanel", "CoBench_OpenProject", "CoBench_OpenAssembly", "CoBench_SetAssembly",
-        "Separator", "CoBench_EditPart", "CoBench_ReleasePart", "CoBench_ReleaseAll",
+        "CoBench_ShowGraph", "Separator", "CoBench_EditPart", "CoBench_AskForPart",
+        "CoBench_ReleasePart", "CoBench_ReleaseAll",
         "Separator", "CoBench_SplitDocument", "Separator", "CoBench_Settings"]
 
 
@@ -230,8 +281,11 @@ def context_items():
     """Commands for the right-click menu of the 3D view and the tree."""
     session = session_mod.get()
     items = []
-    if assembly.selected_part(session):
+    selected = assembly.selected_part(session)
+    if selected:
         items.append("CoBench_EditPart")
+        if session.state(selected).status == locks.OTHER:
+            items.append("CoBench_AskForPart")
     doc = App.ActiveDocument
     if doc and doc.FileName and session.locks.holds(doc.FileName):
         items.append("CoBench_ReleasePart")
