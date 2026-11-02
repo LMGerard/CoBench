@@ -28,7 +28,7 @@ on any of them.
   part from the panel: every file using it is relinked.
 - **Clean tree.** The files an assembly loads stay out of FreeCAD's tree.
 
-FreeCAD 1.0 or later. English and French.
+FreeCAD 1.0 or later. Interface in English, French, German, Spanish, Italian, Portuguese, Polish and Chinese (follows the language of FreeCAD).
 
 ## Install
 

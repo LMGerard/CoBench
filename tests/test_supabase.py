@@ -156,3 +156,56 @@ def test_project_keeps_locking_config(tmp_path):
     assert again.locking["id"] == project.locking["id"]
     again.set_locking("files")
     assert Project(str(tmp_path)).locking == {"store": "files"}
+
+
+def test_offline_version_is_sent_before_the_release(tmp_path, rest):
+    part = str(tmp_path / "Plate.FCStd")
+    alice = manager(tmp_path)
+    assert alice.acquire(part).status == locks.MINE
+    rest.online = False
+    alice.set_version(part, "new-sha", 10)
+    alice.release(part)
+    order = []
+    real = rest.request
+
+    def spy(method, table, *a, **k):
+        order.append((method, table))
+        return real(method, table, *a, **k)
+    rest.request = spy
+    rest.online = True
+    assert alice.refresh()
+    assert order.index(("POST", "cobench_versions")) < order.index(("DELETE", "cobench_locks"))
+    assert rest.tables["cobench_versions"][0]["sha1"] == "new-sha"
+    assert rest.tables["cobench_locks"] == []
+
+
+def test_refused_version_keeps_the_part(tmp_path, rest):
+    part = str(tmp_path / "Plate.FCStd")
+    alice = manager(tmp_path)
+    alice.acquire(part)
+    real = rest.request
+
+    def refuse(method, table, *a, **k):
+        if table == "cobench_versions":
+            return 403, {"message": "denied"}
+        return real(method, table, *a, **k)
+    rest.request = refuse
+    with pytest.raises(supabase.StoreError):
+        alice.set_version(part, "new-sha", 10)
+    assert alice.version_unsent(part)
+    rest.request = real
+    assert not alice.version_unsent(part)
+    assert rest.tables["cobench_versions"][0]["sha1"] == "new-sha"
+
+
+def test_languages_have_the_same_placeholders():
+    import re
+    from cobench import i18n
+    folder = os.path.join(os.path.dirname(i18n.__file__), "translations")
+    codes = ["fr"] + sorted(f[:-5] for f in os.listdir(folder) if f.endswith(".json"))
+    source = [k for k in i18n.FR if k]
+    for code in codes:
+        cat = i18n.catalog(code)
+        assert sorted(k for k in cat if k) == sorted(source), code
+        for key in source:
+            assert set(re.findall(r"\{\w+\}", key)) == set(re.findall(r"\{\w+\}", cat[key])), (code, key)

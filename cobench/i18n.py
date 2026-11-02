@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later
 """Translations.  English is the source language; the language follows FreeCAD's.
 
-To add a language, copy the FR dictionary, translate the values and register
-it in CATALOGS under the name FreeCAD gives the language in its preferences.
+French is below; other languages are JSON files in cobench/translations/
+(<code>.json: English text -> translation).  To add one, copy a JSON file,
+translate the values and add the language to _FREECAD_NAMES.
 """
 
+import json
 import locale
+import os
 
 FR = {
     "you": "vous",
@@ -339,12 +342,35 @@ FR = {
         '{name} verrouillée : en attente de la dernière version.',
     '{what}: Supabase error {status} {message}':
         '{what} : erreur Supabase {status} {message}',
+    "{name} could not be saved, so it stays locked for you.\n\n{error}":
+        "{name} n'a pas pu être enregistrée : elle reste verrouillée pour vous.\n\n{error}",
+    "The document is still marked as modified.":
+        "Le document est toujours marqué comme modifié.",
+    "The new version of {name} could not be recorded in the lock database, so it stays locked for you (otherwise others could edit an older copy).\n\n{error}":
+        "La nouvelle version de {name} n'a pas pu être inscrite dans la base des verrous : la pièce reste verrouillée pour vous (sinon les autres pourraient modifier une copie plus ancienne).\n\n{error}",
 }
 
-CATALOGS = {"French": FR}
-_LOCALE_CATALOGS = {"fr": FR}
+# Other languages live in cobench/translations/<code>.json (English text -> translation).
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_FREECAD_NAMES = {  # first word of the language name in FreeCAD's preferences -> code
+    "french": "fr", "german": "de", "spanish": "es", "italian": "it",
+    "portuguese": "pt", "polish": "pl", "chinese": "zh",
+}
 
 _catalog = None
+
+
+def catalog(code):
+    """The translations for a language code ('' or 'en' -> none)."""
+    if code == "fr":
+        return FR
+    if not code or code == "en":
+        return {}
+    try:
+        with open(os.path.join(_HERE, "translations", code + ".json"), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
 
 
 def _detect():
@@ -355,12 +381,13 @@ def _detect():
     except Exception:
         pass
     if name:
-        return CATALOGS.get(name, {})
+        first = name.replace(",", " ").split()[0].lower() if name.split() else ""
+        return catalog(_FREECAD_NAMES.get(first, ""))
     try:
         code = (locale.getlocale()[0] or "")[:2].lower()
     except Exception:
         code = ""
-    return _LOCALE_CATALOGS.get(code, {})
+    return catalog(code if code in _FREECAD_NAMES.values() else "")
 
 
 def tr(text, **values):

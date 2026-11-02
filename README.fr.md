@@ -31,7 +31,7 @@ dépend d'aucun d'eux.
 - **Arborescence propre.** Les fichiers chargés par un assemblage n'encombrent plus
   l'arborescence de FreeCAD.
 
-FreeCAD 1.0 ou plus récent. Interface en français et en anglais (suit la langue de FreeCAD).
+FreeCAD 1.0 ou plus récent. Interface en français, anglais, allemand, espagnol, italien, portugais, polonais et chinois (suit la langue de FreeCAD).
 
 ## Installation
 

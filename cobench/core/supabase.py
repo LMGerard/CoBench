@@ -134,6 +134,7 @@ class SupabaseLockManager(LockManager):
         self.offline = False
         self._pending_release = set()   # rel keys to delete once back online
         self._pending_versions = {}     # rel -> row to send once back online
+        self._failed_versions = {}      # rel -> row the database refused (the part is kept)
         self._lock = threading.Lock()
         self._refreshing = False
 
@@ -172,15 +173,20 @@ class SupabaseLockManager(LockManager):
         threading.Thread(target=run, daemon=True).start()
 
     def _flush(self):
-        """Send what could not be sent while offline."""
-        for rel in list(self._pending_release):
-            self._delete(rel)
-            self._pending_release.discard(rel)
+        """Send what could not be sent while offline.
+
+        Versions go first: a part must never look free while the database still
+        holds the fingerprint of an older file.
+        """
         for rel, row in list(self._pending_versions.items()):
             status, detail = self.client.request("POST", "cobench_versions", "on_conflict=project,part", row,
                                                  "resolution=merge-duplicates,return=minimal")
             self.client.check(status, detail, "cobench_versions")
             self._pending_versions.pop(rel, None)
+            self._failed_versions.pop(rel, None)
+        for rel in list(self._pending_release):
+            self._delete(rel)
+            self._pending_release.discard(rel)
 
     def _key(self, part_path):
         return os.path.normcase(self.rel(part_path))
@@ -284,12 +290,32 @@ class SupabaseLockManager(LockManager):
                "saved_by": self.identity.user}
         with self._lock:
             self.versions[self._key(part_path)] = dict(row)
+        self._send_version(rel, row)
+
+    def _send_version(self, rel, row):
         try:
             status, detail = self.client.request("POST", "cobench_versions", "on_conflict=project,part", row,
                                                  "resolution=merge-duplicates,return=minimal")
             self.client.check(status, detail, "cobench_versions")
         except locks.Offline:
             self._pending_versions[rel] = row
+        except StoreError:
+            self._failed_versions[rel] = row
+            raise
+        self._failed_versions.pop(rel, None)
+
+    def version_unsent(self, part_path):
+        """Retry a version the database refused; True if it still is not recorded."""
+        rel = self._part(part_path)
+        row = self._failed_versions.get(rel)
+        if row is None:
+            return False
+        try:
+            self._send_version(rel, row)
+        except StoreError as exc:
+            self.error = str(exc)
+            return True
+        return False
 
     def forget_version(self, part_path):
         rel = self._part(part_path)

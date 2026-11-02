@@ -645,26 +645,62 @@ class Session:
     def release(self, path, ask=True):
         """Give the part back.  Offers to save unsaved changes first."""
         doc = self.find_document(path)
+        name = self.display_name(path)
         if ask and doc is not None and self.is_modified(doc):
             answer = QtWidgets.QMessageBox.question(
                 main_window(), "CoBench",
-                tr("{name} has unsaved changes. Save before releasing it?", name=os.path.basename(path)),
+                tr("{name} has unsaved changes. Save before releasing it?", name=name),
                 QtWidgets.QMessageBox.Save | QtWidgets.QMessageBox.Discard | QtWidgets.QMessageBox.Cancel,
                 QtWidgets.QMessageBox.Save)
             if answer == QtWidgets.QMessageBox.Cancel:
                 return False
             if answer == QtWidgets.QMessageBox.Save:
-                doc.save()
+                try:
+                    doc.save()
+                except Exception as exc:
+                    QtWidgets.QMessageBox.warning(
+                        main_window(), "CoBench",
+                        tr("{name} could not be saved, so it stays locked for you.\n\n{error}",
+                           name=name, error=exc))
+                    return False
+                if self.is_modified(doc):
+                    QtWidgets.QMessageBox.warning(
+                        main_window(), "CoBench",
+                        tr("{name} could not be saved, so it stays locked for you.\n\n{error}",
+                           name=name, error=tr("The document is still marked as modified.")))
+                    return False
             elif answer == QtWidgets.QMessageBox.Discard:
                 # Back to the saved version: others will see exactly that file.
                 self._reopen(doc, False)
-        self.locks.release(path)
+        if self.store() == "supabase" and self.locks.version_unsent(path):
+            QtWidgets.QMessageBox.warning(
+                main_window(), "CoBench",
+                tr("The new version of {name} could not be recorded in the lock database, so it stays "
+                   "locked for you (otherwise others could edit an older copy).\n\n{error}",
+                   name=name, error=self.locks.error))
+            return False
+        try:
+            self.locks.release(path)
+        except supabase.StoreError as exc:
+            QtWidgets.QMessageBox.warning(main_window(), "CoBench", str(exc))
+            return False
         request = requests.Request.read(path)
         if request is not None and not self.identity.same_as(request.user, request.host):
             requests.clear(path)
-        status_message(tr("{name} released.", name=os.path.basename(path)))
+        status_message(tr("{name} released.", name=name))
         self.tick()
         return True
+
+    def display_name(self, path):
+        """The file name as written on disk (held paths are lower case on Windows)."""
+        target = _norm(path)
+        for part in self.parts:
+            if _norm(part) == target:
+                return os.path.basename(part)
+        doc = self.find_document(path)
+        if doc is not None and doc.FileName:
+            return os.path.basename(doc.FileName)
+        return os.path.basename(path)
 
     def take_over(self, path):
         state = self.locks.state(path)
