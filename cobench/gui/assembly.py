@@ -264,15 +264,18 @@ def _highlight_node(root, sub):
     import Part
     try:
         shape = Part.getShape(root, sub, needSubElement=False)
-    except Exception:
+    except Exception as exc:
+        App.Console.PrintWarning("CoBench: no shape to highlight for %s.%s (%s)\n" % (root.Name, sub, exc))
         return None
     if shape.isNull():
+        App.Console.PrintWarning("CoBench: empty shape for %s.%s\n" % (root.Name, sub))
         return None
     box = shape.BoundBox
     tolerance = max(0.01, 0.005 * box.DiagonalLength) if box.isValid() else 0.1
     try:
         points, triangles = shape.tessellate(tolerance)
-    except Exception:
+    except Exception as exc:
+        App.Console.PrintWarning("CoBench: cannot mesh %s.%s (%s)\n" % (root.Name, sub, exc))
         return None
     if not triangles:
         return None
