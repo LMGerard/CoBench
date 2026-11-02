@@ -437,8 +437,8 @@ class AssemblyWatcher:
                 if graph.findChild(self.marker) >= 0:
                     continue
                 graph.addChild(self.marker)
-                view.addEventCallback("SoMouseButtonEvent", self._make_click_handler(view, doc.Name))
-                view.addEventCallback("SoLocation2Event", self._make_move_handler(view, doc.Name))
+                view.addEventCallback("SoMouseButtonEvent", _guarded(self._make_click_handler(view, doc.Name)))
+                view.addEventCallback("SoLocation2Event", _guarded(self._make_move_handler(view, doc.Name)))
             except Exception as exc:
                 App.Console.PrintWarning("CoBench: %s\n" % exc)
 
@@ -520,19 +520,11 @@ class AssemblyWatcher:
             info = None
         if not info:
             return None, None, None
-        doc = App.getDocument(info.get("Document")) if info.get("Document") else None
-        root = info.get("ParentObject") or info.get("Object")
-        sub = info.get("SubName", "") if info.get("ParentObject") else ""
+        doc, root, sub = _info_target(info)
         return link_under(doc, root, sub, self._contains)
 
     def _path_at(self, view, position):
         return self._link_at(view, position)[0]
-
-    def _path_from_info(self, info):
-        doc = App.getDocument(info.get("Document")) if info.get("Document") else None
-        root = info.get("ParentObject") or info.get("Object")
-        sub = info.get("SubName", "") if info.get("ParentObject") else ""
-        return part_under(doc, root, sub, self._contains)
 
     # -- the small menu -------------------------------------------------------
     def show_menu(self, path):
@@ -556,6 +548,37 @@ class AssemblyWatcher:
         panel = self.panel_getter()
         if path and panel is not None:
             panel.select_path(path)
+
+
+def _info_target(info):
+    """(document, top object name, subname) from View3DInventor.getObjectInfo().
+
+    FreeCAD gives "Object" as a name but "ParentObject" as the object itself.
+    """
+    parent = info.get("ParentObject")
+    if parent is not None:
+        name = parent if isinstance(parent, str) else getattr(parent, "Name", None)
+        doc = getattr(parent, "Document", None)
+        sub = info.get("SubName", "") or ""
+    else:
+        name, doc, sub = info.get("Object"), None, ""
+    if doc is None and info.get("Document"):
+        try:
+            doc = App.getDocument(info.get("Document"))
+        except Exception:
+            doc = None
+    return doc, name, sub
+
+
+def _guarded(handler):
+    """Coin callbacks must never raise: FreeCAD only prints the exception's class."""
+    def run(event):
+        try:
+            handler(event)
+        except Exception:
+            import traceback
+            App.Console.PrintWarning("CoBench: %s\n" % traceback.format_exc())
+    return run
 
 
 class _Gate:
