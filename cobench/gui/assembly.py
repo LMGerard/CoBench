@@ -324,6 +324,7 @@ class AssemblyWatcher:
         self.last_hover = 0.0
         self.menu = None
         self.gate = _Gate(self)
+        self.filters = []       # mouse filters of the 3D views (kept alive)
         self.gate_on = False
         session.listeners.append(self.refresh)
         session.recompute_listeners.append(self._recomputed)
@@ -438,9 +439,17 @@ class AssemblyWatcher:
                     continue
                 graph.addChild(self.marker)
                 view.addEventCallback("SoMouseButtonEvent", _guarded(self._make_click_handler(view, doc.Name)))
-                view.addEventCallback("SoLocation2Event", _guarded(self._make_move_handler(view, doc.Name)))
             except Exception as exc:
                 App.Console.PrintWarning("CoBench: %s\n" % exc)
+                continue
+            viewport = _viewport(view)
+            if viewport is None:
+                App.Console.PrintWarning("CoBench: no access to the 3D view of %s: parts cannot be picked.\n"
+                                         % doc.Label)
+                continue
+            mouse = _MouseFilter(self, view, doc.Name, viewport)
+            viewport.installEventFilter(mouse)
+            self.filters.append(mouse)  # keep the Python object alive
 
     def _make_click_handler(self, view, doc_name):
         def on_click(event):
@@ -453,17 +462,7 @@ class AssemblyWatcher:
             if button != "BUTTON1":
                 return
             if self.picking(doc_name):
-                if state == "DOWN":
-                    self.press = (doc_name, position, time.monotonic())
-                    return
-                press, self.press = self.press, None
-                if (state == "UP" and press and press[0] == doc_name and time.monotonic() - press[2] < 0.6
-                        and abs(position[0] - press[1][0]) <= 4 and abs(position[1] - press[1][1]) <= 4):
-                    path = self._path_at(view, position)
-                    if path:
-                        from .session import later
-                        later(lambda: self.show_menu(path))
-                return
+                return  # handled by _MouseFilter
             if state != "DOWN":
                 return
             now = time.monotonic()
@@ -480,38 +479,37 @@ class AssemblyWatcher:
                     later(lambda: self.session.view(path))
         return on_click
 
-    def _make_move_handler(self, view, doc_name):
-        def on_move(event):
-            overlay = self.overlays.get(doc_name)
-            if overlay is None:
-                return
-            if not self.picking(doc_name) or self.buttons_down:
-                if not self.picking(doc_name):
-                    overlay.set_highlight(None, None)
-                return
-            now = time.monotonic()
-            if now - self.last_hover < 0.03:
-                return
-            self.last_hover = now
-            position = tuple(event.get("Position", (0, 0)))
-            path, root, sub = self._link_at(view, position)
-            if path is None:
-                overlay.set_highlight(None, None)
-                _set_cursor(None)
-                return
-            key = (doc_name, root.Name, sub)
-            if key not in self.highlights:
-                self.highlights[key] = _highlight_node(root, sub)
-            overlay.set_highlight(key, self.highlights[key])
-            status, label = self._look(path)
-            name = os.path.splitext(os.path.basename(path))[0]
-            text = name if status not in BOX_COLORS else "%s (%s)" % (name, label)
-            try:
-                Gui.getMainWindow().statusBar().showMessage(text, 3000)
-            except Exception:
-                pass
-            _set_cursor(Qt.PointingHandCursor)
-        return on_move
+    def hover(self, view, doc_name, position, viewport):
+        """Light up the whole part under the mouse (position in Coin pixels).
+
+        False when no part of the project is there (navigation cube, empty space...).
+        """
+        overlay = self.overlays.get(doc_name)
+        if overlay is None:
+            return
+        path, root, sub = self._link_at(view, position)
+        if path is None:
+            overlay.set_highlight(None, None)
+            viewport.unsetCursor()
+            return False
+        key = (doc_name, root.Name, sub)
+        if key not in self.highlights:
+            self.highlights[key] = _highlight_node(root, sub)
+        overlay.set_highlight(key, self.highlights[key])
+        status, label = self._look(path)
+        name = os.path.splitext(os.path.basename(path))[0]
+        text = name if status not in BOX_COLORS else "%s (%s)" % (name, label)
+        try:
+            Gui.getMainWindow().statusBar().showMessage(text, 3000)
+        except Exception:
+            pass
+        viewport.setCursor(QtGui.QCursor(Qt.PointingHandCursor))
+        return True
+
+    def unhover(self, doc_name):
+        overlay = self.overlays.get(doc_name)
+        if overlay is not None:
+            overlay.set_highlight(None, None)
 
     def _link_at(self, view, position):
         try:
@@ -594,18 +592,124 @@ class _Gate:
             return True
 
 
-def _set_cursor(shape):
-    """FreeCAD shows a 'forbidden' cursor where the gate refuses: show ours instead."""
-    def apply():
-        widget = QtWidgets.QApplication.widgetAt(QtGui.QCursor.pos())
-        if widget is None:
-            return
-        if shape is None:
-            widget.unsetCursor()
-        else:
-            widget.setCursor(QtGui.QCursor(shape))
-    from .session import later
-    later(apply)
+def _viewport(view):
+    """The Qt widget that receives the mouse events of a 3D view."""
+    try:
+        return view.graphicsView().viewport()
+    except Exception:
+        return None
+
+
+def _event_pos(event):
+    pos = event.position() if hasattr(event, "position") else event.pos()
+    return QtCore.QPointF(pos)
+
+
+class _MouseFilter(QtCore.QObject):
+    """Mouse of one 3D view of an assembly, seen before FreeCAD.
+
+    In a picked assembly: moves without button never reach FreeCAD (no face or
+    edge pre-selection), CoBench lights the whole part up instead; a left click
+    opens the part menu; a left drag is handed back to FreeCAD so the view still
+    rotates.  Everything else (wheel, middle and right buttons) goes through.
+    """
+
+    DRAG = 4  # pixels
+
+    def __init__(self, watcher, view, doc_name, viewport):
+        super().__init__(viewport)
+        self.watcher = watcher
+        self.view = view
+        self.doc_name = doc_name
+        self.viewport = viewport
+        self.press = None       # (local position, global position, modifiers)
+        self.dragging = False
+        self.replaying = False
+        self.cleared = False
+
+    def eventFilter(self, obj, event):
+        if self.replaying:
+            return False
+        try:
+            return self._handle(event)
+        except Exception:
+            import traceback
+            App.Console.PrintWarning("CoBench: %s\n" % traceback.format_exc())
+            return False
+
+    def _coin(self, pos):
+        """Qt widget position -> Coin pixel position (origin bottom left, device pixels)."""
+        ratio = self.viewport.devicePixelRatioF()
+        return (int(pos.x() * ratio), int((self.viewport.height() - 1 - pos.y()) * ratio))
+
+    def _handle(self, event):
+        kind = event.type()
+        mouse = (QtCore.QEvent.MouseMove, QtCore.QEvent.MouseButtonPress,
+                 QtCore.QEvent.MouseButtonRelease, QtCore.QEvent.MouseButtonDblClick)
+        if kind == QtCore.QEvent.Leave:
+            self.watcher.unhover(self.doc_name)
+            return False
+        if kind not in mouse:
+            return False
+        if not self.watcher.picking(self.doc_name):
+            self.press, self.dragging, self.cleared = None, False, False
+            return False
+        if not self.cleared:
+            self.cleared = True
+            try:
+                Gui.Selection.clearPreselection()
+                Gui.Selection.clearSelection(self.doc_name)
+            except Exception:
+                pass
+        pos = _event_pos(event)
+        left = event.button() == Qt.LeftButton
+        if kind == QtCore.QEvent.MouseMove:
+            if self.press is not None and not self.dragging:
+                start = self.press[0]
+                if abs(pos.x() - start.x()) > self.DRAG or abs(pos.y() - start.y()) > self.DRAG:
+                    self.dragging = True
+                    self.watcher.unhover(self.doc_name)
+                    self._replay_press()
+                    return False
+                return True
+            if self.dragging or event.buttons() != Qt.NoButton:
+                return False
+            # Over a part: ours.  Elsewhere (navigation cube...): FreeCAD's.
+            return bool(self.watcher.hover(self.view, self.doc_name, self._coin(pos), self.viewport))
+        if kind == QtCore.QEvent.MouseButtonPress and left:
+            self.press = (pos, QtCore.QPointF(event.globalPosition() if hasattr(event, "globalPosition")
+                                              else event.globalPos()), event.modifiers())
+            self.dragging = False
+            return True
+        if kind == QtCore.QEvent.MouseButtonRelease and left:
+            press, dragging = self.press, self.dragging
+            self.press, self.dragging = None, False
+            if press is None or dragging:
+                return False  # the end of a rotation: FreeCAD's
+            path = self.watcher._path_at(self.view, self._coin(pos))
+            if not path:
+                # Not a part (navigation cube, empty space...): an ordinary click for FreeCAD.
+                self.press = press
+                self._replay_press()
+                self.press = None
+                return False
+            from .session import later
+            later(lambda: self.watcher.show_menu(path))
+            return True
+        if kind == QtCore.QEvent.MouseButtonDblClick and left:
+            return True
+        return False
+
+    def _replay_press(self):
+        """Give FreeCAD the press it did not get, so the drag rotates the view."""
+        local, global_pos, modifiers = self.press
+        event = QtGui.QMouseEvent(QtCore.QEvent.MouseButtonPress, local, global_pos,
+                                  Qt.LeftButton, Qt.LeftButton, modifiers)
+        self.replaying = True
+        try:
+            QtWidgets.QApplication.sendEvent(self.viewport, event)
+        finally:
+            self.replaying = False
 
 
 class PartMenu(QtWidgets.QFrame):
