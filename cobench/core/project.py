@@ -8,6 +8,7 @@ so the folder stays usable without CoBench.
 
 import json
 import os
+import uuid
 
 from . import fcstd, locks
 
@@ -21,6 +22,9 @@ class Project:
         self.name = os.path.basename(self.root.rstrip("\\/")) or self.root
         self.assembly = ""  # path relative to root, "/" separators
         self.tags = {}      # relative path -> [tag, ...]
+        # Where locks live: {"store": "files"} (lock files next to the parts, default)
+        # or {"store": "supabase", "url": ..., "key": <public key>, "id": <project id>}.
+        self.locking = {"store": "files"}
         self.load()
 
     # -- project file ------------------------------------------------------
@@ -40,12 +44,19 @@ class Project:
             tags = data.get("tags") or {}
             if isinstance(tags, dict):
                 self.tags = {str(k): [str(t) for t in v] for k, v in tags.items() if isinstance(v, list)}
+            locking = data.get("locking")
+            if isinstance(locking, dict) and locking.get("store") in ("files", "supabase"):
+                self.locking = {str(k): str(v) for k, v in locking.items()}
+            else:
+                self.locking = {"store": "files"}
         return True
 
     def save(self):
         data = {"format": 1, "name": self.name, "assembly": self.assembly}
         if self.tags:
             data["tags"] = {k: v for k, v in sorted(self.tags.items()) if v}
+        if self.locking.get("store", "files") != "files":
+            data["locking"] = dict(self.locking)
         tmp = self.project_file + ".tmp"
         with open(tmp, "w", encoding="utf-8") as stream:
             json.dump(data, stream, indent=1, ensure_ascii=False)
@@ -64,6 +75,17 @@ class Project:
         except ValueError:  # other drive on Windows
             return False
         return not rel.startswith("..") and not os.path.isabs(rel)
+
+    def set_locking(self, store, url="", key=""):
+        """Choose where the locks of the project live, for everybody."""
+        self.load()  # keep what others saved meanwhile
+        if store == "supabase":
+            project_id = self.locking.get("id") or uuid.uuid4().hex
+            self.locking = {"store": "supabase", "url": url.strip().rstrip("/"), "key": key.strip(),
+                            "id": project_id}
+        else:
+            self.locking = {"store": "files"}
+        self.save()
 
     def assembly_path(self):
         return self.abs(self.assembly) if self.assembly else ""

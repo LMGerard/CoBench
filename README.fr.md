@@ -12,7 +12,7 @@ dépend d'aucun d'eux.
   vous, verrouillée par quelqu'un), qui l'a enregistrée en dernier et où elle est utilisée.
 - **Vue assemblage.** Dans un assemblage, les pièces modifiées par quelqu'un d'autre sont
   encadrées en rouge avec son nom, les vôtres en vert. Double-cliquez une pièce dans la vue
-  3D pour modifier son fichier.
+  3D pour ouvrir son fichier en lecture seule.
 - **Découper en pièces.** Transforme un document qui contient plusieurs corps en un fichier
   par pièce, un `Variables.FCStd` avec tous les VarSets et tableurs (les pièces continuent à
   les lire : changer une cote met tout à jour) et un `Assemblage.FCStd` qui relie les pièces
@@ -54,10 +54,12 @@ Avec git : `git clone https://github.com/LMGerard/CoBench` dans ce dossier `Mod`
    `cobench.json` (nom du projet et assemblage central). Si une pièce fait le lien vers les
    autres, elle devient l'assemblage central (★) ; clic droit sur une pièce pour en choisir
    une autre.
-3. Double-cliquez une pièce (ou *Modifier*) pour la verrouiller et l'ouvrir. Travaillez,
+3. Double-cliquez une pièce pour l'ouvrir en lecture seule. Pour la modifier, cliquez sur le
+   cadenas (ou *Modifier*) : elle est verrouillée et ouverte. Travaillez,
    enregistrez, fermez : le verrou est rendu à la fermeture du document, ou avec *Libérer*.
 4. *Ouvrir l'assemblage central* montre qui travaille sur quoi. Double-cliquez une pièce
-   dans la vue 3D, ou sélectionnez-la puis *Modifier la pièce* (aussi au clic droit).
+   dans la vue 3D pour l'ouvrir en lecture seule, ou sélectionnez-la puis cliquez sur le cadenas
+   pour la modifier.
 
 CoBench démarre avec FreeCAD : verrous, protection et notifications fonctionnent dans tous
 les ateliers, même sans jamais ouvrir l'atelier CoBench. Fermer une pièce la libère, et
@@ -94,6 +96,22 @@ lit l'état donné par le client de synchro (OneDrive, Nextcloud en fichiers vir
 ailleurs, il attend que l'ordinateur soit resté en ligne quelques secondes (10 s, réglable).
 À chaque enregistrement, `Piece.FCStd.cobench-stamp` note qui a enregistré et l'empreinte du
 fichier : si votre copie est plus ancienne quand vous prenez la pièce, CoBench vous le dit.
+
+**Verrous en temps réel (option Supabase).** Par défaut, les verrous sont des fichiers à côté
+des pièces et voyagent avec la synchro. Pour des verrous instantanés, un projet peut les garder
+dans une base Supabase gratuite ; les fichiers des pièces restent dans le dossier partagé.
+1. Créez un projet sur supabase.com.
+2. Dans FreeCAD, *CoBench > Mon nom et options > Verrous du projet* : cochez *Base Supabase*,
+   cliquez sur *Copier le script SQL*, collez-le dans Supabase > *SQL Editor* et cliquez sur
+   *Run* (une seule fois).
+3. Collez l'URL du projet et la clé **anon / publishable** (Supabase > *Project Settings* >
+   *API*), jamais la clé *service_role / secret*. *Tester*, puis *OK*.
+
+Le réglage est enregistré dans `cobench.json` : vos collègues n'ont rien à faire. La base
+refuse un second verrou sur la même pièce, et retient l'empreinte de la dernière version de
+chaque pièce : si votre copie n'est pas encore arrivée par la synchro, CoBench garde la pièce
+pour vous et l'ouvre dès qu'elle est là. Hors ligne, on ne peut ni prendre ni rendre une pièce
+(un rendu en attente part au retour de la connexion).
 
 **Limite :** avec un dossier synchronisé, deux personnes qui ouvrent la même pièce dans le
 délai de synchronisation ne verront pas le verrou de l'autre. Sur un partage réseau, le

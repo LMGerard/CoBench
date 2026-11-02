@@ -309,12 +309,100 @@ class SettingsDialog(QtWidgets.QDialog):
         host = QtWidgets.QLabel(tr("Computer: {host}", host=session.identity.host))
         host.setEnabled(False)
         form.addRow(host)
+        form.addRow(self._locking_box())
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         form.addRow(buttons)
 
+    # -- where the locks of the project live ---------------------------------
+    def _locking_box(self):
+        project = self.session.project
+        box = QtWidgets.QGroupBox(tr("Locks of the project {name}", name=project.name) if project
+                                  else tr("Locks of the project"))
+        layout = QtWidgets.QFormLayout(box)
+        self.store_files = QtWidgets.QRadioButton(tr("Lock files next to the parts (any shared folder)"))
+        self.store_supabase = QtWidgets.QRadioButton(tr("Supabase database (real time)"))
+        config = project.locking if project else {"store": "files"}
+        self.store_supabase.setChecked(config.get("store") == "supabase")
+        self.store_files.setChecked(config.get("store") != "supabase")
+        layout.addRow(self.store_files)
+        layout.addRow(self.store_supabase)
+        self.url = QtWidgets.QLineEdit(config.get("url", ""))
+        self.url.setPlaceholderText("https://xxxxxxxx.supabase.co")
+        self.key = QtWidgets.QLineEdit(config.get("key", ""))
+        self.key.setPlaceholderText("sb_publishable_... / eyJ...")
+        self.key.setToolTip(tr("The anon / publishable key, never the service_role / secret key"))
+        layout.addRow(tr("Project URL:"), self.url)
+        layout.addRow(tr("Public key:"), self.key)
+        row = QtWidgets.QHBoxLayout()
+        test = QtWidgets.QPushButton(tr("Test"))
+        test.clicked.connect(self._test)
+        script = QtWidgets.QPushButton(tr("Copy the SQL script"))
+        script.setToolTip(tr("Paste it once in Supabase > SQL Editor, then Run"))
+        script.clicked.connect(self._copy_script)
+        row.addWidget(test)
+        row.addWidget(script)
+        row.addStretch(1)
+        layout.addRow(row)
+        hint = QtWidgets.QLabel(tr("Saved in cobench.json: everybody opening the project uses the same "
+                                   "locks. The part files stay in the shared folder."))
+        hint.setWordWrap(True)
+        hint.setEnabled(False)
+        layout.addRow(hint)
+
+        def follow(_on=None):
+            on = self.store_supabase.isChecked()
+            for widget in (self.url, self.key, test, script):
+                widget.setEnabled(on)
+        self.store_supabase.toggled.connect(follow)
+        follow()
+        box.setEnabled(project is not None)
+        return box
+
+    def _test(self):
+        from ..core import supabase
+        problem = supabase.test_connection(self.url.text().strip(), self.key.text().strip())
+        if problem:
+            QtWidgets.QMessageBox.warning(self, "CoBench", problem)
+        else:
+            QtWidgets.QMessageBox.information(self, "CoBench", tr("The lock database is ready."))
+
+    def _copy_script(self):
+        from ..core import supabase
+        with open(supabase.SQL_FILE, "r", encoding="utf-8") as stream:
+            QtWidgets.QApplication.clipboard().setText(stream.read())
+        QtWidgets.QMessageBox.information(
+            self, "CoBench", tr("SQL script copied. In Supabase, open SQL Editor, paste it and click Run."))
+
+    def _apply_locking(self):
+        """False when the change must wait (parts still locked)."""
+        project = self.session.project
+        if project is None:
+            return True
+        store = "supabase" if self.store_supabase.isChecked() else "files"
+        url, key = self.url.text().strip().rstrip("/"), self.key.text().strip()
+        current = project.locking
+        if store == current.get("store", "files") and (
+                store == "files" or (url == current.get("url") and key == current.get("key"))):
+            return True
+        if store == "supabase":
+            from ..core import supabase
+            problem = supabase.test_connection(url, key)
+            if problem:
+                QtWidgets.QMessageBox.warning(self, "CoBench", problem)
+                return False
+        if self.session.locks.held:
+            QtWidgets.QMessageBox.warning(
+                self, "CoBench", tr("Release your parts before changing where the locks are kept."))
+            return False
+        project.set_locking(store, url, key)
+        self.session.use_project_locking()
+        return True
+
     def accept(self):
+        if not self._apply_locking():
+            return
         name = self.name.text().strip()
         if name and name != self.session.identity.user:
             self.session.set_user(name)

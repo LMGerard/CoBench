@@ -8,7 +8,7 @@ coloured box: red while someone else edits the file, green while you do.
 Nothing is written into the document: the boxes live only in the 3D view.
 
 Clicking a part shows its file in the CoBench panel; double-clicking it in the
-3D view, or the "Edit part" command, locks and opens that file.
+3D view opens that file read-only; the padlock (or "Edit part") locks it.
 """
 
 import os
@@ -318,7 +318,7 @@ class AssemblyWatcher:
                     if path:
                         # Leave the coin callback before opening dialogs.
                         from .session import later
-                        later(lambda: self.session.edit(path))
+                        later(lambda: self.session.view(path))
         return on_click
 
     def _path_from_info(self, info):

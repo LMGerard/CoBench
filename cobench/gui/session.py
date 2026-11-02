@@ -24,7 +24,7 @@ import uuid
 import FreeCAD as App
 import FreeCADGui as Gui
 
-from ..core import fcstd, locks, requests, stamps, syncstate
+from ..core import fcstd, locks, requests, stamps, supabase, syncstate
 from ..core.identity import Identity
 from ..core.project import Project, find_root
 from ..i18n import tr
@@ -133,7 +133,8 @@ class Session:
         version = ".".join(App.Version()[:3])
         self.session_id = uuid.uuid4().hex
         self.identity = Identity(prefs.user_name())
-        self.locks = locks.LockManager(self.identity, self.session_id, "FreeCAD " + version)
+        self.app_name = "FreeCAD " + version
+        self.locks = locks.LockManager(self.identity, self.session_id, self.app_name)
         self.project = None
         self.parts = []           # project parts found at the last tick
         self.states = {}          # part path -> LockState at the last tick
@@ -155,6 +156,8 @@ class Session:
         self._lock_taken = {}     # part path -> (monotonic time, lock seen online since then)
         self._lock_sent = set()   # part paths whose lock reached the server
         self._offline_told = set()
+        self._waiting = {}        # normalised path -> (path, sha1, size): locked, waiting for the file
+        self._store_error = ""
         self.observer = _DocumentObserver(self)
         App.addDocumentObserver(self.observer)
         self.gui_observer = _GuiObserver(self)
@@ -171,6 +174,7 @@ class Session:
         self.timer = QtCore.QTimer()
         self.timer.timeout.connect(self.tick)
         self.timer.start(prefs.refresh_seconds() * 1000)
+        self.use_project_locking()
         later(self.tick, 500)
 
     # -- notifications -----------------------------------------------------
@@ -214,7 +218,7 @@ class Session:
         self.locks.identity = self.identity
         # Locks already held were written with the old name: rewrite them.
         for part in list(self.locks.held):
-            info = locks.LockInfo.read(locks.lock_path(part))
+            info = self.locks.state(part).info
             if info is not None and info.session == self.session_id and info.user == old.user:
                 self.locks.force(part)
         self.tick()
@@ -232,8 +236,46 @@ class Session:
                 App.Console.PrintWarning("CoBench: %s\n" % exc)
         prefs.set_last_project(self.project.root)
         self.states = {}
+        self.use_project_locking()
         self.tick()
         return self.project
+
+    # -- where the locks live ------------------------------------------------
+    def store(self):
+        """'files' or 'supabase'."""
+        return getattr(self.locks, "store", "files")
+
+    def use_project_locking(self):
+        """Use the lock store chosen for the project (files or Supabase).
+
+        Refused while this FreeCAD holds locks in the other store.
+        """
+        config = self.project.locking if self.project else {"store": "files"}
+        wanted = config.get("store", "files")
+        if wanted == "supabase" and not (config.get("url") and config.get("key") and config.get("id")):
+            wanted = "files"
+        if wanted == self.store() and (wanted == "files" or (
+                self.locks.client.url == config.get("url") and self.locks.project_id == config.get("id"))):
+            return True
+        if self.locks.held:
+            self.notify(tr("Release your parts before changing where the locks are kept."), warning=True)
+            return False
+        if wanted == "supabase":
+            manager = supabase.SupabaseLockManager(
+                self.identity, self.session_id, self.app_name, config["url"], config["key"], config["id"],
+                self.project.rel)
+            manager.refresh_async()
+            interval = min(prefs.refresh_seconds(), 2)
+        else:
+            manager = locks.LockManager(self.identity, self.session_id, self.app_name)
+            interval = prefs.refresh_seconds()
+        self.locks = manager
+        self._lock_sent.clear()
+        self._lock_taken.clear()
+        self._waiting.clear()
+        self.timer.setInterval(interval * 1000)
+        self.states = {}
+        return True
 
     def managed(self, path):
         """True if CoBench handles locks for this file."""
@@ -391,11 +433,13 @@ class Session:
                 return self.view(path)
             if box.clickedButton() is not take:
                 return None
-            state = self.locks.force(path)
+            state = self._store_call(self.locks.force, path)
         else:
-            if state.status == locks.FREE and not self._may_lock_offline(name):
+            if self.store() == "files" and state.status == locks.FREE and not self._may_lock_offline(name):
                 return None
-            state = self.locks.acquire(path)
+            state = self._store_call(self.locks.acquire, path)
+        if state is None:
+            return None
         if state.status != locks.MINE:
             QtWidgets.QMessageBox.warning(
                 main_window(), "CoBench",
@@ -403,7 +447,11 @@ class Session:
             self.tick()
             return None
         locks.set_read_only(path, False)
-        if not self._copy_is_latest(path):
+        answer = self._copy_is_latest(path)
+        if answer == "wait":
+            self.tick()
+            return None
+        if not answer:
             self.locks.release(path)
             self.tick()
             return None
@@ -416,6 +464,20 @@ class Session:
         status_message(tr("{name} locked: you can edit it.", name=name))
         self.tick()
         return doc
+
+    def _store_call(self, method, path):
+        """Take or force a lock; None (after telling the user) when the store cannot be used."""
+        try:
+            return method(path)
+        except locks.Offline:
+            QtWidgets.QMessageBox.warning(
+                main_window(), "CoBench",
+                tr("Cannot reach the lock database (offline?): {name} was not locked.",
+                   name=os.path.basename(path)))
+        except supabase.StoreError as exc:
+            QtWidgets.QMessageBox.warning(main_window(), "CoBench", tr("Lock database: {error}", error=str(exc)))
+        self.tick()
+        return None
 
     def _may_lock_offline(self, name):
         """True when online, or when the user takes the part anyway."""
@@ -434,10 +496,16 @@ class Session:
         return box.clickedButton() is anyway
 
     def _copy_is_latest(self, path):
-        """Warn when the last saved version of the part has not arrived yet."""
+        """Warn when the last saved version of the part has not arrived yet.
+
+        True: go on.  False: give the part back.  "wait" (Supabase): keep the
+        lock and open the part by itself once the right file is there.
+        """
         name = os.path.basename(path)
         if syncstate.file_state(path) == syncstate.CLOUD_ONLY:
             status_message(tr("{name} is only in the cloud: it is being downloaded.", name=name))
+        if self.store() == "supabase":
+            return self._database_version_check(path)
         try:
             stamp = stamps.newer_elsewhere(path)
         except OSError:
@@ -459,13 +527,72 @@ class Session:
         box.exec()
         return box.clickedButton() is not wait
 
+    def _database_version_check(self, path):
+        version = self.locks.version(path)
+        if not version or not version.get("sha1") or self._is_version(path, version):
+            return True
+        name = os.path.basename(path)
+        user = version.get("saved_by") or "?"
+        box = QtWidgets.QMessageBox(main_window())
+        box.setIcon(QtWidgets.QMessageBox.Information)
+        box.setWindowTitle("CoBench")
+        box.setText(tr("The last version of {name}, saved by {user}, has not arrived on this computer yet.",
+                       name=name, user=user))
+        box.setInformativeText(tr("The part stays locked for you: CoBench opens it as soon as the file "
+                                  "has arrived. If you edit this copy, the other version will be lost."))
+        wait = box.addButton(tr("Wait"), QtWidgets.QMessageBox.AcceptRole)
+        anyway = box.addButton(tr("Edit this copy anyway"), QtWidgets.QMessageBox.DestructiveRole)
+        box.addButton(QtWidgets.QMessageBox.Cancel)
+        box.setDefaultButton(wait)
+        box.exec()
+        if box.clickedButton() is wait:
+            self._waiting[_norm(path)] = (path, version.get("sha1"), version.get("size"))
+            status_message(tr("{name} locked: waiting for the last version.", name=name))
+            return "wait"
+        return box.clickedButton() is anyway
+
+    @staticmethod
+    def _is_version(path, version):
+        """True when the local file is this version (or was saved after it)."""
+        try:
+            size = os.path.getsize(path)
+            if size == int(version.get("size") or -1) and stamps.fingerprint(path) == version.get("sha1"):
+                return True
+            saved = locks.parse_iso(str(version.get("saved_at") or ""))
+            return saved is not None and os.path.getmtime(path) > saved.timestamp() + 2
+        except (OSError, ValueError):
+            return False
+
+    def _check_waiting(self):
+        for key, (path, sha1, size) in list(self._waiting.items()):
+            if not self.locks.holds(path):
+                del self._waiting[key]
+                continue
+            if not self._is_version(path, {"sha1": sha1, "size": size}):
+                continue
+            del self._waiting[key]
+            self.notify(tr("{name} has arrived: opened for editing.", name=_stem(path)))
+            later(lambda p=path: self._load(p))
+
     # -- is my lock sent? ----------------------------------------------------
     def lock_pending(self, path):
-        """True while the lock I hold on path may not have reached the others."""
+        """True while the lock I hold on path may not have reached the others,
+        or (Supabase) while waiting for the last version of the file."""
+        if not self.locks.holds(path):
+            return False
+        if _norm(path) in self._waiting:
+            return True
+        if self.store() == "supabase":
+            return False  # the database answered: the others see it
         # locks.held keeps normalised paths (lower case on Windows): compare the same way.
-        return self.locks.holds(path) and _norm(path) not in self._lock_sent
+        return _norm(path) not in self._lock_sent
+
+    def waiting_for_file(self, path):
+        return _norm(path) in self._waiting
 
     def _check_lock_sync(self):
+        if self.store() != "files":
+            return
         held = set(self.locks.held)
         for path in list(self._lock_taken):
             if path not in held:
@@ -476,6 +603,7 @@ class Session:
         if not waiting:
             return
         is_online = self.connectivity.poll()
+        names = {_norm(p): _stem(p) for p in self.parts}  # held paths are lower case on Windows
         now = time.monotonic()
         for path in waiting:
             since, was_online = self._lock_taken.get(path, (now, True))
@@ -485,7 +613,7 @@ class Session:
                 if path not in self._offline_told:
                     self._offline_told.add(path)
                     self.notify(tr("Offline: the lock on {name} may not have reached the others yet.",
-                                   name=_stem(path)), warning=True)
+                                   name=names.get(path, _stem(path))), warning=True)
                 continue
             if path not in self._lock_taken or not was_online:
                 self._lock_taken[path] = (now, True)
@@ -495,7 +623,7 @@ class Session:
                 state == syncstate.UNKNOWN and now - since >= prefs.sync_delay())
             if sent:
                 self._lock_sent.add(path)
-                self.notify(tr("Lock on {name} sent: you can go offline.", name=_stem(path)))
+                self.notify(tr("Lock on {name} sent: you can go offline.", name=names.get(path, _stem(path))))
 
     def view(self, path):
         """Open without locking."""
@@ -615,6 +743,8 @@ class Session:
             self.locks.release(path)
             requests.clear(path)
             stamps.remove(path)
+            if self.store() == "supabase":
+                self.locks.forget_version(path)
             project.moved(path, new_path)
             if path in mine_before:
                 self.locks.acquire(new_path)
@@ -657,11 +787,40 @@ class Session:
             App.Console.PrintWarning("CoBench: %s\n" % exc)
         self.changed()
 
+    def _follow_project_file(self):
+        """Someone changed cobench.json (e.g. moved the locks to Supabase): follow."""
+        try:
+            mtime = os.stat(self.project.project_file).st_mtime_ns
+        except OSError:
+            return
+        if getattr(self, "_project_mtime", None) is None:
+            self._project_mtime = mtime
+            return
+        if mtime != self._project_mtime:
+            self._project_mtime = mtime
+            before = dict(self.project.locking)
+            self.project.load()
+            if self.project.locking != before:
+                self.use_project_locking()
+
+    def _check_store(self):
+        """Tell once about a problem with the lock database, and when it is solved."""
+        if self.store() != "supabase":
+            return
+        error = self.locks.error
+        if error and error != self._store_error:
+            self.notify(tr("Lock database: {error}", error=error), warning=True)
+        elif not error and self._store_error:
+            self.notify(tr("Lock database reachable again."))
+        self._store_error = error
+        self.locks.refresh_async()
+
     def _tick(self):
         project = self.project
         if project is None:
             self.parts, self.states = [], {}
             return
+        self._follow_project_file()
         parts = project.parts()
         previous = self.states
         states = {}
@@ -677,6 +836,8 @@ class Session:
         self._check_requests(parts, states)
         self._reload_changed()
         self._check_lock_sync()
+        self._check_waiting()
+        self._check_store()
 
     def _compare(self, path, before, now):
         name = _stem(path)
@@ -880,7 +1041,10 @@ class Session:
             return
         if state.status in (locks.FREE, locks.ORPHAN):
             locks.set_read_only(path, False)
-            self.locks.acquire(path)
+            try:
+                self.locks.acquire(path)
+            except (locks.Offline, supabase.StoreError) as exc:
+                App.Console.PrintWarning("CoBench: %s\n" % exc)
             if not self._quiet:
                 later(lambda: status_message(tr("{name} saved and locked: release it when you are done.",
                                                 name=name)))
@@ -894,8 +1058,11 @@ class Session:
         self.loaded[_norm(path)] = _mtime(path)
         if self.managed(path) and self.locks.holds(path):
             try:
-                stamps.write(path, self.identity)
-            except OSError as exc:
+                if self.store() == "supabase":
+                    self.locks.set_version(path, stamps.fingerprint(path), os.path.getsize(path))
+                else:
+                    stamps.write(path, self.identity)
+            except (OSError, supabase.StoreError) as exc:
                 App.Console.PrintWarning("CoBench: %s\n" % exc)
         later(self.changed)
 

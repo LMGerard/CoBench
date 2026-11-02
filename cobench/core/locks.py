@@ -86,6 +86,10 @@ def pid_alive(pid):
     return True
 
 
+class Offline(Exception):
+    """The lock store could not be reached (no network, server down)."""
+
+
 class LockInfo:
     """Content of a lock file."""
 

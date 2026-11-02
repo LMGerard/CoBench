@@ -77,7 +77,7 @@ class GraphDialog(QtWidgets.QDialog):
         self.resize(900, 600)
         layout = QtWidgets.QVBoxLayout(self)
         hint = QtWidgets.QLabel(tr("An arrow goes from a file to the parts it uses. "
-                                   "Click to select, double-click to edit."))
+                                   "Click to select, double-click to open read-only."))
         hint.setWordWrap(True)
         layout.addWidget(hint)
         self.scene = QtWidgets.QGraphicsScene(self)

@@ -28,6 +28,8 @@ def status_text(state, pending=False):
     if state.status == locks.FREE:
         return tr("free")
     if state.status == locks.MINE:
+        if pending == "waiting":
+            return tr("you are editing (waiting for the last version)")
         return tr("you are editing (lock being sent)") if pending else tr("you are editing")
     if state.status == locks.ORPHAN:
         return tr("your old lock (FreeCAD closed)")
@@ -246,9 +248,13 @@ class PartsPanel(QtWidgets.QWidget):
         self._sync_grid(parts)
         self._sync_tree(parts)
         broken = sum(len(v) for v in self._missing.values())
+        problems = []
+        if self.session.store() == "supabase" and self.session.locks.error:
+            problems.append(tr("Lock database: {error}", error=self.session.locks.error))
         if broken:
-            self.warning.setText(tr("{count} broken links: a linked file was moved or deleted.", count=broken))
-        self.warning.setVisible(bool(broken))
+            problems.append(tr("{count} broken links: a linked file was moved or deleted.", count=broken))
+        self.warning.setText("\n".join(problems))
+        self.warning.setVisible(bool(problems))
         self._apply_filter()
         self._show_details()
 
@@ -259,7 +265,9 @@ class PartsPanel(QtWidgets.QWidget):
         return state.status
 
     def _text(self, path, state):
-        return status_text(state, self._key(path, state) == session_mod.PENDING)
+        if self._key(path, state) != session_mod.PENDING:
+            return status_text(state)
+        return status_text(state, "waiting" if self.session.waiting_for_file(path) else "sending")
 
     def _label(self, path):
         project = self.session.project
@@ -466,7 +474,7 @@ class PartsPanel(QtWidgets.QWidget):
 
     def _double_clicked(self, item, *_args):
         if self._selected:
-            self.edit()
+            self.view()  # open read-only; the padlock (or Edit) locks it
 
     def _graph_data(self):
         if self._graph is None and self.session.project:
@@ -480,7 +488,7 @@ class PartsPanel(QtWidgets.QWidget):
             path = self._selected = None
         self._update_buttons()
         if not path or self.session.project is None:
-            self.details.setText("<i>%s</i>" % tr("Select a part. Double-click to edit it."))
+            self.details.setText("<i>%s</i>" % tr("Select a part. Double-click to open it read-only."))
             return
         project = self.session.project
         state = self.session.state(path)
@@ -664,7 +672,7 @@ class PartsPanel(QtWidgets.QWidget):
         graph, _users = self._graph_data()
         dialog = GraphDialog(self.session, graph, self)
         dialog.part_selected.connect(self.select_path)
-        dialog.part_activated.connect(lambda path: (self.select_path(path), self.edit()))
+        dialog.part_activated.connect(lambda path: (self.select_path(path), self.view()))
         dialog.show()
 
     def change_user(self):

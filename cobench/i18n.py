@@ -69,7 +69,8 @@ FR = {
     "Uses: {parts}": "Utilise : {parts}",
     "Used in: {parts}": "Utilisée dans : {parts}",
     "Show": "Afficher",
-    "Select a part. Double-click to edit it.": "Sélectionnez une pièce. Double-cliquez pour la modifier.",
+    "Select a part. Double-click to open it read-only.":
+        "Sélectionnez une pièce. Double-cliquez pour l'ouvrir en lecture seule.",
     "Could not read the file (still syncing?).": "Lecture du fichier impossible (synchronisation en cours ?).",
     "{name} not found.": "{name} introuvable.",
     "Conflict copies made by the sync client: {files}":
@@ -138,8 +139,8 @@ FR = {
         "Une version plus récente de {name} a été enregistrée par quelqu'un d'autre ; votre copie a des modifications non enregistrées et n'a pas été rechargée.",
     'Activity':
         'Activité',
-    'An arrow goes from a file to the parts it uses. Click to select, double-click to edit.':
-        "Une flèche va d'un fichier vers les pièces qu'il utilise. Clic pour sélectionner, double-clic pour modifier.",
+    'An arrow goes from a file to the parts it uses. Click to select, double-click to open read-only.':
+        "Une flèche va d'un fichier vers les pièces qu'il utilise. Clic pour sélectionner, double-clic pour ouvrir en lecture seule.",
     'Ask for it':
         'La demander',
     'Ask for the part':
@@ -284,6 +285,60 @@ FR = {
         'Reprendre',
     'Your own lock left by a FreeCAD that closed. Click to take it back':
         'Votre propre verrou laissé par un FreeCAD fermé. Cliquez pour le reprendre',
+    'Cannot reach the lock database (offline?): {name} was not locked.':
+        "Impossible de joindre la base des verrous (hors ligne ?) : {name} n'a pas été verrouillée.",
+    'Cannot reach {url} ({error}).':
+        'Impossible de joindre {url} ({error}).',
+    'Copy the SQL script':
+        'Copier le script SQL',
+    'Enter the project URL and the anon / publishable key.':
+        "Saisissez l'URL du projet et la clé anon / publishable.",
+    'Lock database reachable again.':
+        'Base des verrous de nouveau joignable.',
+    'Lock database: {error}':
+        'Base des verrous : {error}',
+    'Lock files next to the parts (any shared folder)':
+        'Fichiers de verrou à côté des pièces (tout dossier partagé)',
+    'Locks of the project':
+        'Verrous du projet',
+    'Locks of the project {name}':
+        'Verrous du projet {name}',
+    'Paste it once in Supabase > SQL Editor, then Run':
+        'À coller une fois dans Supabase > SQL Editor, puis Run',
+    'Project URL:':
+        'URL du projet :',
+    'Public key:':
+        'Clé publique :',
+    'Release your parts before changing where the locks are kept.':
+        "Libérez vos pièces avant de changer l'endroit où sont gardés les verrous.",
+    'SQL script copied. In Supabase, open SQL Editor, paste it and click Run.':
+        'Script SQL copié. Dans Supabase, ouvrez SQL Editor, collez-le et cliquez sur Run.',
+    'Saved in cobench.json: everybody opening the project uses the same locks. The part files stay in the shared folder.':
+        'Enregistré dans cobench.json : tous ceux qui ouvrent le projet utilisent les mêmes verrous. Les fichiers des pièces restent dans le dossier partagé.',
+    'Supabase database (real time)':
+        'Base Supabase (temps réel)',
+    'Supabase refused the key ({status}). Use the anon / publishable key.':
+        'Supabase a refusé la clé ({status}). Utilisez la clé anon / publishable.',
+    'Test':
+        'Tester',
+    'The CoBench tables are missing: run the SQL script in Supabase.':
+        'Les tables CoBench sont absentes : lancez le script SQL dans Supabase.',
+    'The anon / publishable key, never the service_role / secret key':
+        'La clé anon / publishable, jamais la clé service_role / secret',
+    'The last version of {name}, saved by {user}, has not arrived on this computer yet.':
+        "La dernière version de {name}, enregistrée par {user}, n'est pas encore arrivée sur cet ordinateur.",
+    'The lock database is ready.':
+        'La base des verrous est prête.',
+    'The part stays locked for you: CoBench opens it as soon as the file has arrived. If you edit this copy, the other version will be lost.':
+        "La pièce reste verrouillée pour vous : CoBench l'ouvre dès que le fichier est arrivé. Si vous modifiez cette copie, l'autre version sera perdue.",
+    'you are editing (waiting for the last version)':
+        'vous la modifiez (en attente de la dernière version)',
+    '{name} has arrived: opened for editing.':
+        '{name} est arrivée : ouverte pour modification.',
+    '{name} locked: waiting for the last version.':
+        '{name} verrouillée : en attente de la dernière version.',
+    '{what}: Supabase error {status} {message}':
+        '{what} : erreur Supabase {status} {message}',
 }
 
 CATALOGS = {"French": FR}
