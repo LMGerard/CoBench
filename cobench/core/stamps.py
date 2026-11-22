@@ -45,9 +45,11 @@ class Stamp:
                    int(data.get("size", 0) or 0), str(data.get("sha1", "")))
 
 
-def write(part_path, identity):
+def write(part_path, identity, extra=None):
+    """``extra``: more fields, e.g. the proposal a version comes from (ignored by readers)."""
     data = {"format": 1, "user": identity.user, "host": identity.host, "saved": now_iso(),
             "size": os.path.getsize(part_path), "sha1": fingerprint(part_path)}
+    data.update(extra or {})
     path = stamp_path(part_path)
     tmp = path + ".tmp-%d" % os.getpid()
     with open(tmp, "w", encoding="utf-8") as stream:

@@ -349,6 +349,131 @@ FR = {
     "In assemblies, pick whole parts and show a small menu (instead of selecting faces)":
         "Dans les assemblages, désigner des pièces entières et afficher un petit menu (au lieu de sélectionner des faces)",
     "Show in the panel": "Voir dans le panneau",
+    # Proposals
+    "Propose a change...":
+        "Proposer une modification...",
+    "Proposals: {titles}":
+        "Propositions : {titles}",
+    "changed since the proposal: integrate it by hand":
+        "modifiée depuis la proposition : à intégrer à la main",
+    "the last version has not arrived on this computer yet":
+        "la dernière version n'est pas encore arrivée sur cet ordinateur",
+    "the part was moved or deleted":
+        "la pièce a été déplacée ou supprimée",
+    "the proposed file has not arrived yet":
+        "le fichier proposé n'est pas encore arrivé",
+    "Proposal {title}: change the copy of {name}, save it, and the others will see it.":
+        "Proposition {title} : modifiez la copie de {name}, enregistrez-la, et les autres la verront.",
+    "Grey: the current part. Green: the proposed one.":
+        "Gris : la pièce actuelle. Vert : la pièce proposée.",
+    "Replace {count} parts by the versions proposed by {user}?\n\nThe current versions are kept in the proposal folder.":
+        "Remplacer {count} pièces par les versions proposées par {user} ?\n\nLes versions actuelles sont gardées dans le dossier de la proposition.",
+    "Proposal {title} integrated: {count} parts replaced.":
+        "Proposition {title} intégrée : {count} pièces remplacées.",
+    "Proposal {title} refused.":
+        "Proposition {title} refusée.",
+    "Withdraw your proposal {title}?":
+        "Retirer votre proposition {title} ?",
+    "{name} has unsaved changes: save it or close it before proposing a change.":
+        "{name} a des modifications non enregistrées : enregistrez-la ou fermez-la avant de proposer une modification.",
+    "The proposed file has not arrived on this computer yet.":
+        "Le fichier proposé n'est pas encore arrivé sur cet ordinateur.",
+    "Proposal opened read-only.":
+        "Proposition ouverte en lecture seule.",
+    "Say why in the comment box before refusing.":
+        "Dites pourquoi dans la zone de commentaire avant de refuser.",
+    "Propose a change":
+        "Proposer une modification",
+    "CoBench copies {name} into a proposal, without locking it. Change the copy and save it: the others see the proposal in their panel, comment on it, and integrate or refuse it.":
+        "CoBench copie {name} dans une proposition, sans la verrouiller. Modifiez la copie et enregistrez-la : les autres voient la proposition dans leur panneau, la commentent, puis l'intègrent ou la refusent.",
+    "New proposal":
+        "Nouvelle proposition",
+    "Proposal":
+        "Proposition",
+    "What does it change? (e.g. Plate 6 mm thick)":
+        "Que change-t-elle ? (ex. : plaque de 6 mm)",
+    "Title":
+        "Titre",
+    "Why, and what to check":
+        "Pourquoi, et quoi vérifier",
+    "Message":
+        "Message",
+    "Proposal: {title}":
+        "Proposition : {title}",
+    "Open the proposal":
+        "Ouvrir la proposition",
+    "Open the current part":
+        "Ouvrir la pièce actuelle",
+    "Superimpose":
+        "Superposer",
+    "Show the current part in grey and the proposed one in green":
+        "Afficher la pièce actuelle en gris et la pièce proposée en vert",
+    "Comment":
+        "Commenter",
+    "Integrate":
+        "Intégrer",
+    "Replace the parts by the proposed versions":
+        "Remplacer les pièces par les versions proposées",
+    "Refuse":
+        "Refuser",
+    "Close the proposal with the comment above":
+        "Fermer la proposition avec le commentaire ci-dessus",
+    "Withdraw":
+        "Retirer",
+    "closed too":
+        "fermées aussi",
+    "Proposals ({count} open)":
+        "Propositions ({count} ouvertes)",
+    "open":
+        "ouverte",
+    "integrated by {user}":
+        "intégrée par {user}",
+    "refused by {user}":
+        "refusée par {user}",
+    "withdrawn":
+        "retirée",
+    "Your proposal {title}: {status}.":
+        "Votre proposition {title} : {status}.",
+    "The last version of {name}, saved by {user}, has not arrived on this computer yet. Wait for the sync before proposing a change.":
+        "La dernière version de {name}, enregistrée par {user}, n'est pas encore arrivée sur cet ordinateur. Attendez la synchronisation avant de proposer une modification.",
+    "The proposal could not be saved: {error}":
+        "La proposition n'a pas pu être enregistrée : {error}",
+    "Current: {name}":
+        "Actuelle : {name}",
+    "Proposed: {name}":
+        "Proposée : {name}",
+    "Cannot reach the lock database (offline?): nothing was changed.":
+        "Impossible de joindre la base des verrous (hors ligne ?) : rien n'a été modifié.",
+    "The proposal could not be integrated: {error}":
+        "La proposition n'a pas pu être intégrée : {error}",
+    "The proposal could not be closed: {error}":
+        "La proposition n'a pas pu être fermée : {error}",
+    "Add to: {title}":
+        "Ajouter à : {title}",
+    "Edit the proposal":
+        "Modifier la proposition",
+    "No proposal. Right-click a part > Propose a change.":
+        "Aucune proposition. Clic droit sur une pièce > Proposer une modification.",
+    "{user} proposes a change: {title}":
+        "{user} propose une modification : {title}",
+    "{user} commented on the proposal {title}.":
+        "{user} a commenté la proposition {title}.",
+    "This proposal cannot be integrated:":
+        "Cette proposition ne peut pas être intégrée :",
+    "Proposed by {user} on {when}":
+        "Proposée par {user} le {when}",
+    "(from the version saved by {user})":
+        "(à partir de la version enregistrée par {user})",
+    "ready to integrate":
+        "prête à intégrer",
+    "integrated":
+        "intégrée",
+    "refused":
+        "refusée",
+    "No comment yet.":
+        "Pas encore de commentaire.",
+    "{name} belongs to a proposal: only its author can change it, while it is open.":
+        "{name} appartient à une proposition : seul son auteur peut la modifier, tant qu'elle est ouverte.",
 }
 
 # Other languages live in cobench/translations/<code>.json (English text -> translation).
