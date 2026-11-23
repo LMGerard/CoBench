@@ -189,5 +189,12 @@
  "{name} could not be saved, so it stays locked for you.\n\n{error}": "{name} 无法保存，因此仍为您锁定。\n\n{error}",
  "The new version of {name} could not be recorded in the lock database, so it stays locked for you (otherwise others could edit an older copy).\n\n{error}": "{name} 的新版本无法记录到锁定数据库，因此仍为您锁定（否则他人可能编辑旧副本）。\n\n{error}",
  "In assemblies, pick whole parts and show a small menu (instead of selecting faces)": "在装配中整体拾取零件并显示小菜单（而不是选择面）",
- "Show in the panel": "在面板中显示"
+ "Show in the panel": "在面板中显示",
+ "CoBench selection in assemblies": "装配体中的 CoBench 选择",
+ "On: clicking a part of an assembly opens the CoBench menu. Off: FreeCAD's normal selection (several parts, tree, Space to hide)": "开启：单击装配体中的零件会打开 CoBench 菜单。关闭：FreeCAD 的常规选择（多个零件、树视图、按空格键隐藏）",
+ "CoBench selection in assemblies: on": "装配体中的 CoBench 选择：开启",
+ "CoBench selection in assemblies: off (FreeCAD's normal selection)": "装配体中的 CoBench 选择：关闭（FreeCAD 常规选择）",
+ "Show in the tree": "在树视图中显示",
+ "Hide": "隐藏",
+ "Switch to FreeCAD selection": "切换到 FreeCAD 选择"
 }
