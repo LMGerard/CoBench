@@ -349,6 +349,20 @@ FR = {
     "In assemblies, pick whole parts and show a small menu (instead of selecting faces)":
         "Dans les assemblages, désigner des pièces entières et afficher un petit menu (au lieu de sélectionner des faces)",
     "Show in the panel": "Voir dans le panneau",
+    "CoBench selection in assemblies":
+        "Sélection CoBench dans les assemblages",
+    "On: clicking a part of an assembly opens the CoBench menu. Off: FreeCAD's normal selection (several parts, tree, Space to hide)":
+        "Activée : un clic sur une pièce d'un assemblage ouvre le menu CoBench. Désactivée : sélection normale de FreeCAD (plusieurs pièces, arborescence, Espace pour masquer)",
+    "CoBench selection in assemblies: on":
+        "Sélection CoBench dans les assemblages : activée",
+    "CoBench selection in assemblies: off (FreeCAD's normal selection)":
+        "Sélection CoBench dans les assemblages : désactivée (sélection normale de FreeCAD)",
+    "Show in the tree":
+        "Montrer dans l'arborescence",
+    "Hide":
+        "Masquer",
+    "Switch to FreeCAD selection":
+        "Passer à la sélection FreeCAD",
 }
 
 # Other languages live in cobench/translations/<code>.json (English text -> translation).

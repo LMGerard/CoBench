@@ -9,9 +9,11 @@ Nothing is written into the document: the boxes live only in the 3D view.
 
 In an assembly you have not locked yourself, faces and edges are not
 selectable: hovering a part lights the whole part up, and clicking it opens a
-small menu (open read-only, edit, ask for it, show in the panel).  In an
-assembly you have locked, FreeCAD's normal selection is kept: clicking a part
-shows its file in the panel, double-clicking opens it read-only.
+small menu (open read-only, edit, ask for it, show in the panel or in the
+tree, hide).  In an assembly you have locked, FreeCAD's normal selection is
+kept: clicking a part shows its file in the panel, double-clicking opens it
+read-only.  The "CoBench selection" button (or the menu) switches back to
+FreeCAD's normal selection everywhere.
 """
 
 import os
@@ -87,6 +89,27 @@ def link_under(doc, root_name, subname, project_contains):
             sub = ".".join(names[:index]) + "." if index else ""
             return path, root, sub
     return None, None, None
+
+
+def link_object(root, sub):
+    """The object designated by ``root`` + ``sub`` (the link itself, not what it points to)."""
+    if not _alive(root):
+        return None
+    if not sub:
+        return root
+    try:
+        chain = root.getSubObjectList(sub)
+    except Exception:
+        return None
+    return chain[-1] if chain else None
+
+
+def _alive(obj):
+    """False for a deleted object (or one of a closed document)."""
+    try:
+        return obj is not None and obj.Document is not None and bool(obj.Name)
+    except Exception:
+        return False
 
 
 def part_under(doc, root_name, subname, project_contains):
@@ -342,6 +365,7 @@ class AssemblyWatcher:
         self.gate = _Gate(self)
         self.filters = []       # mouse filters of the 3D views (kept alive)
         self.gate_on = False
+        self.selecting = False  # True while CoBench itself selects (the gate lets it through)
         session.listeners.append(self.refresh)
         session.recompute_listeners.append(self._recomputed)
         Gui.Selection.addObserver(self)
@@ -549,14 +573,55 @@ class AssemblyWatcher:
         return self._link_at(view, position)[0]
 
     # -- the small menu -------------------------------------------------------
-    def show_menu(self, path):
+    def show_menu(self, path, root=None, sub=""):
         if self.menu is not None:
             try:
                 self.menu.close()
             except Exception:
                 pass
-        self.menu = PartMenu(self, path)
+        self.menu = PartMenu(self, path, root, sub)
         self.menu.popup(QtGui.QCursor.pos())
+
+    def select_in_tree(self, root, sub):
+        """Select the part in FreeCAD's tree (which then scrolls to it)."""
+        if not _alive(root):
+            return
+        self.selecting = True
+        try:
+            Gui.Selection.clearSelection()
+            Gui.Selection.addSelection(root.Document.Name, root.Name, sub or "")
+        except Exception as exc:
+            App.Console.PrintWarning("CoBench: %s\n" % exc)
+        finally:
+            self.selecting = False
+
+    def toggle_visibility(self, root, sub):
+        """Hide the part (or show it again).  Visibility needs no lock."""
+        obj = link_object(root, sub)
+        if obj is None:
+            return
+        obj.Visibility = not obj.Visibility
+        self.dirty.add(root.Document.Name)
+        self.highlights.clear()
+        overlay = self.overlays.get(root.Document.Name)
+        if overlay is not None:
+            overlay.set_highlight(None, None)
+        self.refresh()
+
+    def set_picking(self, on):
+        """CoBench selection (whole parts + menu) or FreeCAD's normal selection."""
+        prefs.set_assembly_picking(on)
+        if not on:
+            for overlay in self.overlays.values():
+                overlay.set_highlight(None, None)
+        sync_picking_button()
+        self.session.changed()
+        try:
+            Gui.getMainWindow().statusBar().showMessage(
+                tr("CoBench selection in assemblies: on") if on
+                else tr("CoBench selection in assemblies: off (FreeCAD's normal selection)"), 5000)
+        except Exception:
+            pass
 
     # -- selection observer (FreeCAD calls these by name) ----------------------
     def addSelection(self, doc_name, obj_name, sub, _point):
@@ -570,6 +635,20 @@ class AssemblyWatcher:
         panel = self.panel_getter()
         if path and panel is not None:
             panel.select_path(path)
+
+
+def sync_picking_button():
+    """Check or uncheck the "CoBench selection" button to match the option."""
+    try:
+        actions = Gui.Command.get("CoBench_Picking").getAction()
+    except Exception:
+        return
+    wanted = prefs.assembly_picking()
+    for action in actions or []:
+        if action.isCheckable() and action.isChecked() != wanted:
+            action.blockSignals(True)
+            action.setChecked(wanted)
+            action.blockSignals(False)
 
 
 def _info_target(info):
@@ -611,7 +690,7 @@ class _Gate:
 
     def allow(self, doc, obj, sub):
         try:
-            return not self.watcher.picking(doc.Name)
+            return self.watcher.selecting or not self.watcher.picking(doc.Name)
         except Exception:
             return True
 
@@ -720,7 +799,7 @@ class _MouseFilter(QtCore.QObject):
             self.press, self.dragging = None, False
             if press is None or dragging:
                 return False  # the end of a rotation: FreeCAD's
-            path = self.watcher._path_at(self.view, self._coin(pos))
+            path, root, sub = self.watcher._link_at(self.view, self._coin(pos))
             if not path:
                 # Not a part (navigation cube, empty space...): an ordinary click for FreeCAD.
                 self.press = press
@@ -728,7 +807,7 @@ class _MouseFilter(QtCore.QObject):
                 self.press = None
                 return False
             from .session import later
-            later(lambda: self.watcher.show_menu(path))
+            later(lambda: self.watcher.show_menu(path, root, sub))
             return True
         if kind == QtCore.QEvent.MouseButtonDblClick and left:
             return True
@@ -749,7 +828,7 @@ class _MouseFilter(QtCore.QObject):
 class PartMenu(QtWidgets.QFrame):
     """Small floating menu shown when a part of an assembly is clicked."""
 
-    def __init__(self, watcher, path):
+    def __init__(self, watcher, path, root=None, sub=""):
         super().__init__(Gui.getMainWindow(), Qt.Popup)
         self.setAttribute(Qt.WA_DeleteOnClose)
         self.setFrameShape(QtWidgets.QFrame.StyledPanel)
@@ -776,6 +855,14 @@ class PartMenu(QtWidgets.QFrame):
             self._button(layout, tr("Edit"), lambda: session.edit(path))
         self._button(layout, tr("Open read-only"), lambda: session.view(path))
         self._button(layout, tr("Show in the panel"), self._show_in_panel)
+        if root is not None:
+            self._button(layout, tr("Show in the tree"), lambda: watcher.select_in_tree(root, sub))
+            self._button(layout, tr("Hide"), lambda: watcher.toggle_visibility(root, sub))
+        line = QtWidgets.QFrame()
+        line.setFrameShape(QtWidgets.QFrame.HLine)
+        line.setFrameShadow(QtWidgets.QFrame.Sunken)
+        layout.addWidget(line)
+        self._button(layout, tr("Switch to FreeCAD selection"), lambda: watcher.set_picking(False))
 
     def _button(self, layout, text, action):
         button = QtWidgets.QPushButton(text)

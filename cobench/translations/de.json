@@ -189,5 +189,12 @@
  "{name} could not be saved, so it stays locked for you.\n\n{error}": "{name} konnte nicht gespeichert werden und bleibt daher für Sie gesperrt.\n\n{error}",
  "The new version of {name} could not be recorded in the lock database, so it stays locked for you (otherwise others could edit an older copy).\n\n{error}": "Die neue Version von {name} konnte nicht in der Sperrdatenbank eingetragen werden, daher bleibt es für Sie gesperrt (sonst könnten andere eine ältere Kopie bearbeiten).\n\n{error}",
  "In assemblies, pick whole parts and show a small menu (instead of selecting faces)": "In Baugruppen ganze Teile hervorheben und ein kleines Menü anzeigen (statt Flächen auszuwählen)",
- "Show in the panel": "Im Bedienfeld anzeigen"
+ "Show in the panel": "Im Bedienfeld anzeigen",
+ "CoBench selection in assemblies": "CoBench-Auswahl in Baugruppen",
+ "On: clicking a part of an assembly opens the CoBench menu. Off: FreeCAD's normal selection (several parts, tree, Space to hide)": "An: Ein Klick auf ein Teil einer Baugruppe öffnet das CoBench-Menü. Aus: normale FreeCAD-Auswahl (mehrere Teile, Baumansicht, Leertaste zum Ausblenden)",
+ "CoBench selection in assemblies: on": "CoBench-Auswahl in Baugruppen: an",
+ "CoBench selection in assemblies: off (FreeCAD's normal selection)": "CoBench-Auswahl in Baugruppen: aus (normale FreeCAD-Auswahl)",
+ "Show in the tree": "In der Baumansicht zeigen",
+ "Hide": "Ausblenden",
+ "Switch to FreeCAD selection": "Zur FreeCAD-Auswahl wechseln"
 }

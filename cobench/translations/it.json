@@ -189,5 +189,12 @@
  "{name} could not be saved, so it stays locked for you.\n\n{error}": "Impossibile salvare {name}, quindi resta bloccata per te.\n\n{error}",
  "The new version of {name} could not be recorded in the lock database, so it stays locked for you (otherwise others could edit an older copy).\n\n{error}": "Impossibile registrare la nuova versione di {name} nel database dei blocchi, quindi resta bloccata per te (altrimenti altri potrebbero modificare una copia più vecchia).\n\n{error}",
  "In assemblies, pick whole parts and show a small menu (instead of selecting faces)": "Negli assiemi, evidenziare parti intere e mostrare un piccolo menu (invece di selezionare facce)",
- "Show in the panel": "Mostra nel pannello"
+ "Show in the panel": "Mostra nel pannello",
+ "CoBench selection in assemblies": "Selezione CoBench negli assiemi",
+ "On: clicking a part of an assembly opens the CoBench menu. Off: FreeCAD's normal selection (several parts, tree, Space to hide)": "Attiva: un clic su un pezzo di un assieme apre il menu di CoBench. Disattiva: selezione normale di FreeCAD (più pezzi, albero, Spazio per nascondere)",
+ "CoBench selection in assemblies: on": "Selezione CoBench negli assiemi: attiva",
+ "CoBench selection in assemblies: off (FreeCAD's normal selection)": "Selezione CoBench negli assiemi: disattiva (selezione normale di FreeCAD)",
+ "Show in the tree": "Mostra nell'albero",
+ "Hide": "Nascondi",
+ "Switch to FreeCAD selection": "Passa alla selezione di FreeCAD"
 }
