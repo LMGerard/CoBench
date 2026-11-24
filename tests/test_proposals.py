@@ -327,3 +327,59 @@ def test_integrate_with_the_supabase_store(tmp_path, monkeypatch):
     row = fake.tables["cobench_versions"][0]
     assert row["sha1"] == stamps.fingerprint(plate) and row["saved_by"] == "bob"
     assert fake.tables["cobench_locks"] == []
+
+
+# -- list cache, backups, values -------------------------------------------------------
+
+def test_cached_list_sees_new_comments_late_content_and_decisions(tmp_path):
+    root = project(tmp_path)
+    p = proposals.create(root, ALICE, [os.path.join(root, "sub", "Plate.FCStd")], "x")
+    first = proposals.list_proposals(root)[0]
+    assert first.comments() == []
+    assert proposals.list_proposals(root)[0] is first  # nothing changed: not read again
+    proposals.comment(p, BOB, "Why?")
+    assert [c.text for c in proposals.list_proposals(root)[0].comments()] == ["Why?"]
+    # A comment file arriving in two steps through the sync: empty, then complete.
+    late = os.path.join(p.folder, proposals.COMMENTS_DIR, "20991231-000000-carol-0.json")
+    open(late, "w").close()
+    assert len(proposals.list_proposals(root)[0].comments()) == 1
+    with open(late, "w", encoding="utf-8") as stream:
+        json.dump({"user": "carol", "host": "pc3", "date": "2099-12-31T00:00:00+00:00", "text": "Late"}, stream)
+    assert [c.text for c in proposals.list_proposals(root)[0].comments()] == ["Why?", "Late"]
+    proposals.refuse(proposals.Proposal.load(p.folder), BOB, "No")
+    again = proposals.list_proposals(root)[0]
+    assert again.status == proposals.REFUSED
+    assert [c.kind for c in again.comments()].count(proposals.REFUSED) == 1
+
+
+def test_clean_backups_removes_only_fcbak(tmp_path):
+    root = project(tmp_path)
+    p = proposals.create(root, ALICE, [os.path.join(root, "sub", "Plate.FCStd")], "x")
+    stored = p.stored_path(p.files[0])
+    backup = os.path.join(os.path.dirname(stored), "Plate.20261123-120000.FCBak")
+    open(backup, "w").close()
+    assert proposals.clean_backups(p) == ["Plate.20261123-120000.FCBak"]
+    assert os.path.exists(stored) and not os.path.exists(backup)
+
+
+def test_value_only_documents(tmp_path):
+    def doc(path, types):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        objects = "".join('<Object type="%s" name="O%d"/>' % (t, i) for i, t in enumerate(types))
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr("Document.xml", "<Document><Objects>%s</Objects></Document>" % objects)
+        return path
+    assert proposals.value_only(doc(str(tmp_path / "v.FCStd"), ["App::VarSet", "App::DocumentObjectGroup"]))
+    assert not proposals.value_only(doc(str(tmp_path / "p.FCStd"), ["App::VarSet", "PartDesign::Body"]))
+    assert not proposals.value_only(doc(str(tmp_path / "e.FCStd"), []))
+    assert not proposals.value_only(str(tmp_path / "missing.FCStd"))
+
+
+def test_uses_values_finds_names_and_labels():
+    xml = ('<Expression path="Length" expression="Variables#Plateau.Longueur / 2"/>'
+           '<Expression path="Width" expression="Variables#&lt;&lt;Le plateau&gt;&gt;.Largeur"/>')
+    changes = [("Plateau", "Le plateau", "Longueur", "340 mm", "360 mm"),
+               ("Plateau", "Le plateau", "Largeur", "190 mm", "200 mm"),
+               ("Plateau", "Le plateau", "Long", "1", "2"),
+               ("Socle", "Socle", "Longueur", "1", "2")]
+    assert proposals.uses_values(xml, changes) == ["Le plateau.Longueur", "Le plateau.Largeur"]

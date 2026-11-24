@@ -125,12 +125,16 @@ Nothing is written into your FreeCAD documents: the coloured boxes exist only in
 Right-click a part > *Propose a change...*, give a title and a message: CoBench copies the
 part into a proposal **without locking it** and opens the copy. Change it and save it. To change
 several parts together (a plate and the assembly using it), add the next ones to the same
-proposal: the proposed assembly then uses the proposed plate.
+proposal: the proposed assembly then uses the proposed plate. In the proposal window, *Add
+parts...* lists the parts of the project: after a change in `Variables`, those using a changed
+value are already checked, and their copies are recomputed and saved.
 
 The others see *Proposals (n open)* under the buttons of the panel. A double-click opens the
 proposal: the parts it changes, whether each one can be integrated, the comments. *Open the
-proposal* opens the proposed copy read-only, *Superimpose* shows the current part in grey and the
-proposed one in green.
+proposal* opens the proposed copy read-only, *Superimpose* shows the edges of the current part in
+red over the proposed one in see-through green, with the table of the changed values. For a
+document without shapes such as `Variables`, *Superimpose* only shows that table (current value,
+proposed value).
 
 *Integrate* only works if no part changed since the proposal was made (same fingerprint as the
 version it started from): FCStd files cannot be merged, so the whole file is replaced. Otherwise

@@ -136,12 +136,16 @@ Clic droit sur une pièce > *Proposer une modification...*, un titre et un messa
 copie la pièce dans une proposition **sans la verrouiller** et ouvre la copie. Modifiez-la et
 enregistrez-la. Pour changer plusieurs pièces ensemble (une plaque et l'assemblage qui
 l'utilise), ajoutez les suivantes à la même proposition : l'assemblage proposé utilise alors la
-plaque proposée.
+plaque proposée. Dans la fenêtre de la proposition, *Ajouter des pièces...* liste les pièces du
+projet : après un changement dans `Variables`, celles qui utilisent une valeur modifiée sont déjà
+cochées, et leurs copies sont recalculées et enregistrées.
 
 Les autres voient *Propositions (n ouvertes)* sous les boutons du panneau. Un double-clic ouvre
 la proposition : les pièces qu'elle change, si chacune peut être intégrée, les commentaires.
-*Ouvrir la proposition* ouvre la copie en lecture seule, *Superposer* montre la pièce actuelle
-en gris et la pièce proposée en vert.
+*Ouvrir la proposition* ouvre la copie en lecture seule, *Superposer* montre les arêtes de la
+pièce actuelle en rouge sur la pièce proposée en vert transparent, avec le tableau des valeurs
+modifiées. Pour un document sans formes comme `Variables`, *Superposer* montre seulement ce
+tableau (valeur actuelle, valeur proposée).
 
 *Intégrer* ne marche que si aucune pièce n'a changé depuis la proposition (même empreinte que
 la version de départ) : on ne peut pas fusionner deux FCStd, le fichier entier est remplacé.

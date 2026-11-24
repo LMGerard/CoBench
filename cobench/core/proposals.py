@@ -302,13 +302,14 @@ class Proposal:
 
     # -- comments --------------------------------------------------------------
     def comments(self):
-        found = []
         folder = os.path.join(self.folder, COMMENTS_DIR)
-        try:
-            names = sorted(os.listdir(folder))
-        except OSError:
-            names = []
-        for name in names:
+        listing = _listing(folder)
+        key = (listing, json.dumps(self.decision, sort_keys=True) if self.decision is not None else None)
+        cached = getattr(self, "_comments", None)
+        if cached is not None and cached[0] == key:
+            return list(cached[1])
+        found = []
+        for name in sorted(n for n, _size, _mtime in listing):
             if not name.endswith(".json"):
                 continue
             data = _read_json(os.path.join(folder, name))
@@ -322,7 +323,76 @@ class Proposal:
                                  str(self.decision.get("date", "")), str(self.decision.get("comment", "")),
                                  self.status))
         found.sort(key=lambda c: c.date)
-        return found
+        self._comments = (key, found)
+        return list(found)
+
+
+# Documents holding only values (Variables): compared as a table, not superimposed.
+VALUE_TYPES = {"App::VarSet", "Spreadsheet::Sheet", "App::DocumentObjectGroup", "App::Origin",
+               "App::Line", "App::Plane", "App::Point"}
+
+
+def value_only(path):
+    """True for a document holding only values (VarSets, spreadsheets), like Variables."""
+    try:
+        with zipfile.ZipFile(path) as archive:
+            xml = archive.read("Document.xml").decode("utf-8", "replace")
+    except (OSError, KeyError, zipfile.BadZipFile):
+        return False
+    types = re.findall(r'<Object type="([^"]+)"', xml)
+    return bool(types) and all(t in VALUE_TYPES for t in types)
+
+
+def uses_values(xml, changes):
+    """Which changed values the expressions of a Document.xml refer to.
+
+    ``changes`` are (object name, object label, property, ...) tuples; an
+    expression names them ``Variables#Plateau.Longueur`` or
+    ``Variables#<<Plateau>>.Longueur`` (escaped in the XML).
+    """
+    found = []
+    for change in changes:
+        name, label, prop = change[0], change[1], change[2]
+        names = "|".join(re.escape(n) for n in sorted({name, label}))
+        pattern = r"#(?:&lt;&lt;|<<)?(?:%s)(?:&gt;&gt;|>>)?\.%s\b" % (names, re.escape(prop))
+        if re.search(pattern, xml):
+            found.append("%s.%s" % (label, prop))
+    return found
+
+
+_loaded = {}  # proposal folder -> (listing of proposal.json / decision.json, Proposal)
+
+
+def _listing(folder, names=None):
+    """(name, size, mtime) of the files of a folder: cheap, and changes with any of them."""
+    found = []
+    try:
+        with os.scandir(folder) as entries:
+            for entry in entries:
+                if names is not None and entry.name not in names:
+                    continue
+                try:
+                    st = entry.stat()
+                except OSError:
+                    continue
+                found.append((entry.name, st.st_size, st.st_mtime_ns))
+    except OSError:
+        pass
+    return tuple(sorted(found))
+
+
+def clean_backups(proposal):
+    """Remove the .FCBak files FreeCAD writes next to the proposed copies (the author's CoBench only)."""
+    removed = []
+    for base, _dirs, files in os.walk(os.path.join(proposal.folder, FILES_DIR)):
+        for name in files:
+            if name.lower().endswith(".fcbak"):
+                try:
+                    os.remove(os.path.join(base, name))
+                    removed.append(name)
+                except OSError:
+                    pass
+    return removed
 
 
 def list_proposals(root, include_closed=True):
@@ -335,9 +405,16 @@ def list_proposals(root, include_closed=True):
         return found
     for name in names:
         path = os.path.join(folder, name)
-        if not os.path.isfile(os.path.join(path, INFO_FILE)):
+        listing = _listing(path, (INFO_FILE, DECISION_FILE))
+        if not any(n == INFO_FILE for n, _size, _mtime in listing):
             continue
-        proposal = Proposal.load(path)
+        cached = _loaded.get(_norm(path))
+        if cached is not None and cached[0] == listing:
+            proposal = cached[1]
+        else:
+            proposal = Proposal.load(path)
+            if proposal.readable:
+                _loaded[_norm(path)] = (listing, proposal)
         if not proposal.readable:
             continue  # still arriving through the sync
         if include_closed or proposal.is_open:

@@ -7,6 +7,8 @@ a proposed part on the current one.
 """
 
 import os
+import re
+import zipfile
 
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -17,9 +19,13 @@ from . import prefs
 from . import session as session_mod
 from .qt import Qt, QtCore, QtGui, QtWidgets
 
-CURRENT_COLOR = (0.62, 0.62, 0.62)
-CURRENT_TRANSPARENCY = 70
+CURRENT_COLOR = (0.85, 0.16, 0.12)  # the current part: its edges only, in red
+CURRENT_TRANSPARENCY = 0
 PROPOSED_COLOR = (0.18, 0.63, 0.26)
+PROPOSED_TRANSPARENCY = 45  # see-through too: a larger proposed part must not hide the current one
+CURRENT_LINE = (0.85, 0.16, 0.12)
+PROPOSED_LINE = (0.05, 0.35, 0.10)
+SKIPPED_PROPERTIES = {"Label", "Label2", "Visibility", "ExpressionEngine"}
 
 
 def _escape(text):
@@ -92,6 +98,8 @@ def scan(session):
     now = {}
     for proposal in found:
         protect(session, proposal)
+        if proposal.is_open and mine(session, proposal):
+            proposals.clean_backups(proposal)
         comments = [c for c in proposal.comments() if c.kind == "comment"]
         now[proposal.id] = (proposal.status, len(comments))
         if seen is None:
@@ -236,19 +244,138 @@ def _roots(doc):
     return found
 
 
-def _paint(obj, color, transparency):
+def _paint(obj, color, transparency, line=None, wireframe=False):
     view = getattr(obj, "ViewObject", None)
     if view is None:
         return
     try:
+        if wireframe:
+            view.DisplayMode = "Wireframe"
         view.ShapeColor = color
         view.Transparency = transparency
+        if line is not None:
+            view.LineColor = line
+            view.LineWidth = 2.0
     except Exception:
         pass
 
 
+# -- values (Variables) ---------------------------------------------------------------
+
+def _value_text(value):
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, float):
+        return "%g" % value
+    if hasattr(value, "UserString"):
+        return value.UserString
+    return str(value)
+
+
+def _values(doc):
+    """{(object name, property): (object label, value as text)} of the settable simple values."""
+    values = {}
+    if doc is None:
+        return values
+    for obj in doc.Objects:
+        for prop in obj.PropertiesList:
+            if prop in SKIPPED_PROPERTIES:
+                continue
+            try:
+                mode = obj.getEditorMode(prop)
+            except Exception:
+                mode = []
+            if "Hidden" in mode or "ReadOnly" in mode:
+                continue
+            try:
+                value = getattr(obj, prop)
+            except Exception:
+                continue
+            if isinstance(value, (bool, int, float, str)) or type(value).__name__ in (
+                    "Quantity", "Vector", "Placement", "Rotation"):
+                values[(obj.Name, prop)] = (obj.Label, _value_text(value))
+    return values
+
+
+def value_changes(current, proposed):
+    """[(object name, object label, property, current value, proposed value)] that differ."""
+    before, after = _values(current), _values(proposed)
+    rows = []
+    for key in sorted(set(before) | set(after)):
+        old, new = before.get(key), after.get(key)
+        if old is not None and new is not None and old[1] == new[1]:
+            continue
+        label = (new or old)[0]
+        rows.append((key[0], label, key[1], old[1] if old else "", new[1] if new else ""))
+    return rows
+
+
+def changes_for(session, proposal, item):
+    """The value changes of one proposed file, opening both versions hidden if needed."""
+    before = set(App.listDocuments())
+    try:
+        with session.quiet():
+            docs = []
+            for path in (proposal.part_path(item), proposal.stored_path(item)):
+                doc = session.find_document(path)
+                if doc is None and os.path.exists(path):
+                    doc = App.openDocument(path, hidden=True)
+                docs.append(doc)
+        return value_changes(*docs)
+    finally:
+        with session.quiet():
+            for name in set(App.listDocuments()) - before:
+                try:
+                    App.closeDocument(name)
+                except Exception:
+                    pass
+
+
+class ValuesDialog(QtWidgets.QDialog):
+    """The values changed by a proposed file: object, property, current, proposed."""
+
+    def __init__(self, name, rows, parent=None):
+        super().__init__(parent or session_mod.main_window())
+        self.setWindowTitle(tr("Changed values: {name}", name=name))
+        self.setAttribute(Qt.WA_DeleteOnClose)
+        layout = QtWidgets.QVBoxLayout(self)
+        self.table = table = QtWidgets.QTableWidget(len(rows), 4)
+        table.setHorizontalHeaderLabels([tr("Object"), tr("Property"), tr("Current value"), tr("Proposed value")])
+        table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        table.verticalHeader().setVisible(False)
+        for row, (_name, label, prop, old, new) in enumerate(rows):
+            for column, text in enumerate((label, prop, old, new)):
+                cell = QtWidgets.QTableWidgetItem(text)
+                if column == 3:
+                    cell.setForeground(QtGui.QColor(46, 160, 67))
+                table.setItem(row, column, cell)
+        table.resizeColumnsToContents()
+        table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(table)
+        close = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close)
+        close.rejected.connect(self.close)
+        layout.addWidget(close)
+        self.resize(620, min(140 + 26 * len(rows), 600))
+
+
+_value_dialogs = []
+
+
+def show_values(name, rows, parent=None):
+    if not rows:
+        QtWidgets.QMessageBox.information(parent or session_mod.main_window(), "CoBench",
+                                          tr("No value changed in {name}.", name=name))
+        return None
+    dialog = ValuesDialog(name, rows, parent)
+    _value_dialogs.append(dialog)
+    dialog.finished.connect(lambda *_: _value_dialogs.remove(dialog) if dialog in _value_dialogs else None)
+    dialog.show()
+    dialog.raise_()
+    return dialog
+
+
 def compare(session, proposal, item):
-    """A new document showing the current part (grey, transparent) and the proposed one (green).
+    """A new document showing the current part (red edges) and the proposed one (green, see-through).
 
     It holds frozen copies of the shapes, not links: nothing is written in
     the project, nothing has to be saved, and closing it asks nothing.
@@ -259,6 +386,9 @@ def compare(session, proposal, item):
     if not os.path.exists(stored):
         _warn(None, tr("The proposed file has not arrived on this computer yet."))
         return None
+    if proposals.value_only(stored):
+        show_values(_stem(part), changes_for(session, proposal, item))
+        return None
     current = session.view(part) if os.path.exists(part) else None
     proposed = session._load(stored)
     for source in (current, proposed):
@@ -267,9 +397,11 @@ def compare(session, proposal, item):
     with session.quiet():
         doc = App.newDocument("Comparison")
         doc.Label = "%s - %s" % (_stem(part), tr("Superimpose"))
-        for source, label, color, transparency in (
-                (current, tr("Current: {name}", name=_stem(part)), CURRENT_COLOR, CURRENT_TRANSPARENCY),
-                (proposed, tr("Proposed: {name}", name=_stem(part)), PROPOSED_COLOR, 0)):
+        for source, label, color, transparency, line in (
+                (current, tr("Current: {name}", name=_stem(part)), CURRENT_COLOR, CURRENT_TRANSPARENCY,
+                 CURRENT_LINE),
+                (proposed, tr("Proposed: {name}", name=_stem(part)), PROPOSED_COLOR, PROPOSED_TRANSPARENCY,
+                 PROPOSED_LINE)):
             if source is None:
                 continue
             group = doc.addObject("App::DocumentObjectGroup", "Group")
@@ -285,7 +417,7 @@ def compare(session, proposal, item):
                 copy.Shape = shape
                 copy.Label = obj.Label
                 group.addObject(copy)
-                _paint(copy, color, transparency)
+                _paint(copy, color, transparency, line, wireframe=source is current)
         doc.recompute()
     try:
         Gui.getDocument(doc.Name).Modified = False
@@ -297,7 +429,10 @@ def compare(session, proposal, item):
         Gui.SendMsgToActiveView("ViewFit")
     except Exception:
         pass
-    session_mod.status_message(tr("Grey: the current part. Green: the proposed one."))
+    session_mod.status_message(tr("Red edges: the current part. Green: the proposed one."))
+    rows = value_changes(current, proposed)
+    if rows:
+        show_values(_stem(part), rows)
     return doc
 
 
@@ -314,10 +449,14 @@ def integrate(session, proposal, text="", parent=None):
         if doc is not None and session.is_modified(doc):
             _warn(parent, tr("Save or close {name} first.", name=os.path.basename(item.part)))
             return False
+    if len(proposal.files) == 1:
+        question = tr("Replace {name} by the version proposed by {user}?\n\nThe current version is kept in "
+                      "the proposal folder.", name=_stem(proposal.files[0].part), user=proposal.user)
+    else:
+        question = tr("Replace {count} parts by the versions proposed by {user}?\n\nThe current versions "
+                      "are kept in the proposal folder.", count=len(proposal.files), user=proposal.user)
     answer = QtWidgets.QMessageBox.question(
-        parent or session_mod.main_window(), "CoBench",
-        tr("Replace {count} parts by the versions proposed by {user}?\n\nThe current versions are kept in "
-           "the proposal folder.", count=len(proposal.files), user=proposal.user),
+        parent or session_mod.main_window(), "CoBench", question,
         QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
     if answer != QtWidgets.QMessageBox.Yes:
         return False
@@ -345,8 +484,12 @@ def integrate(session, proposal, text="", parent=None):
         _warn(parent, tr("The new version of {name} could not be recorded in the lock database, so it stays "
                          "locked for you (otherwise others could edit an older copy).\n\n{error}",
                          name=os.path.basename(path), error=error))
-    session.notify(tr("Proposal {title} integrated: {count} parts replaced.",
-                      title=proposal.title or proposal.id, count=len(result.parts)))
+    if len(result.parts) == 1:
+        session.notify(tr("Proposal {title} integrated: {name} replaced.",
+                          title=proposal.title or proposal.id, name=_stem(result.parts[0])))
+    else:
+        session.notify(tr("Proposal {title} integrated: {count} parts replaced.",
+                          title=proposal.title or proposal.id, count=len(result.parts)))
     session.tick()
     return True
 
@@ -377,6 +520,153 @@ def withdraw(session, proposal, text="", parent=None):
     except (OSError, proposals.ProposalError) as exc:
         _warn(parent, tr("The proposal could not be closed: {error}", error=exc))
         return False
+    session.tick()
+    return True
+
+
+def candidates(session, proposal):
+    """[(path, note, suggested)] of the parts that could join the proposal, suggested ones first.
+
+    Suggested: the parts whose expressions use a value the proposal changes
+    (a new length in Variables, say); then the other parts using a proposed
+    file; then the rest of the project.
+    """
+    inside = {os.path.normcase(proposal.part_path(f)) for f in proposal.files}
+    changes = []
+    for item in proposal.files:
+        if os.path.exists(proposal.stored_path(item)) and proposals.value_only(proposal.stored_path(item)):
+            changes += changes_for(session, proposal, item)
+    graph = session.project.link_graph(session.parts)
+    found = []
+    for path in session.parts:
+        if os.path.normcase(path) in inside:
+            continue
+        used = [proposal.part_path(f) for f in proposal.files
+                if any(os.path.normcase(x) == os.path.normcase(proposal.part_path(f)) for x in graph.get(path) or [])]
+        uses = []
+        if used and changes:
+            try:
+                with zipfile.ZipFile(path) as archive:
+                    uses = proposals.uses_values(archive.read("Document.xml").decode("utf-8", "replace"), changes)
+            except (OSError, KeyError, zipfile.BadZipFile):
+                uses = []
+        if uses:
+            note, rank = tr("uses {values}", values=", ".join(uses[:3]) + (" ..." if len(uses) > 3 else "")), 0
+        elif used:
+            note, rank = tr("uses {name}", name=", ".join(_stem(u) for u in used)), 1
+        else:
+            note, rank = "", 2
+        found.append((rank, session.project.rel(path).lower(), path, note))
+    found.sort()
+    return [(path, note, rank == 0) for rank, _key, path, note in found]
+
+
+def _recompute_copy(session, proposal, item):
+    """Open the proposed copy hidden, recompute everything, save it; the objects in error."""
+    before = set(App.listDocuments())
+    stored = proposal.stored_path(item)
+    try:
+        with session.quiet():
+            doc = session.find_document(stored) or App.openDocument(stored, hidden=True)
+            for obj in doc.Objects:
+                obj.touch()
+            doc.recompute()
+            errors = [o.Label for o in doc.Objects if "Invalid" in o.State or "Error" in o.State]
+            doc.save()
+        return errors
+    finally:
+        with session.quiet():
+            for name in set(App.listDocuments()) - before:
+                try:
+                    App.closeDocument(name)
+                except Exception:
+                    pass
+
+
+class AddPartsDialog(QtWidgets.QDialog):
+    """Check the parts to copy into the proposal (those using a changed value are checked)."""
+
+    def __init__(self, rows, parent=None):
+        super().__init__(parent or session_mod.main_window())
+        self.setWindowTitle(tr("Add parts to the proposal"))
+        layout = QtWidgets.QVBoxLayout(self)
+        intro = QtWidgets.QLabel(tr("Check the parts to copy into the proposal. Those using a value it "
+                                    "changes are already checked."))
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+        self.list = QtWidgets.QListWidget()
+        for path, note, suggested in rows:
+            text = os.path.basename(path) + (("  —  " + note) if note else "")
+            row = QtWidgets.QListWidgetItem(text)
+            row.setData(Qt.UserRole, path)
+            row.setFlags(row.flags() | Qt.ItemIsUserCheckable)
+            row.setCheckState(Qt.Checked if suggested else Qt.Unchecked)
+            self.list.addItem(row)
+        layout.addWidget(self.list, 1)
+        self.recompute = QtWidgets.QCheckBox(tr("Recompute and save the added copies"))
+        self.recompute.setChecked(True)
+        layout.addWidget(self.recompute)
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self.resize(560, 480)
+
+    def values(self):
+        paths = [self.list.item(i).data(Qt.UserRole) for i in range(self.list.count())
+                 if self.list.item(i).checkState() == Qt.Checked]
+        return paths, self.recompute.isChecked()
+
+
+def add_dependents(session, proposal, parent=None):
+    """Let the author add parts to the proposal, then recompute and save their copies."""
+    rows = candidates(session, proposal)
+    if not rows:
+        _warn(parent, tr("No other part to add."))
+        return False
+    dialog = AddPartsDialog(rows, parent)
+    if dialog.exec() != QtWidgets.QDialog.Accepted:
+        return False
+    paths, recompute = dialog.values()
+    bases = {}
+    for path in paths:
+        base = _base(session, path)
+        if base is not None:
+            bases[path] = base
+    if not bases:
+        return False
+    try:
+        proposals.add_parts(proposal, session.identity, list(bases), bases=bases)
+    except (OSError, proposals.ProposalError) as exc:
+        _warn(parent, tr("The proposal could not be saved: {error}", error=exc))
+        return False
+    if recompute:
+        progress = QtWidgets.QProgressDialog("", "", 0, len(bases), parent or session_mod.main_window())
+        progress.setWindowTitle("CoBench")
+        progress.setCancelButton(None)
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        failed = []
+        QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            for number, path in enumerate(bases):
+                progress.setLabelText(tr("Recomputing the copy of {name}...", name=_stem(path)))
+                progress.setValue(number)
+                QtWidgets.QApplication.processEvents()
+                try:
+                    errors = _recompute_copy(session, proposal, proposal.file_for(path))
+                except Exception as exc:
+                    errors = [str(exc)]
+                if errors:
+                    failed.append((path, errors))
+            progress.setValue(len(bases))
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+            progress.close()
+        for path, errors in failed:
+            _warn(parent, tr("Recompute errors in the copy of {name}: {objects}",
+                             name=_stem(path), objects=", ".join(errors[:8])))
+    session.notify(tr("Parts added to the proposal: {names}.", names=", ".join(_stem(p) for p in bases)))
     session.tick()
     return True
 
@@ -464,7 +754,7 @@ class ProposalDialog(QtWidgets.QDialog):
         self.original_button = QtWidgets.QPushButton(tr("Open the current part"))
         self.original_button.clicked.connect(lambda: self._open(True))
         self.compare_button = QtWidgets.QPushButton(tr("Superimpose"))
-        self.compare_button.setToolTip(tr("Show the current part in grey and the proposed one in green"))
+        self.compare_button.setToolTip(tr("Show the edges of the current part in red over the proposed one in green"))
         self.compare_button.clicked.connect(self._compare)
         for button in (self.open_button, self.original_button, self.compare_button):
             row.addWidget(button)
@@ -489,8 +779,13 @@ class ProposalDialog(QtWidgets.QDialog):
         self.refuse_button.clicked.connect(self._refuse)
         self.withdraw_button = QtWidgets.QPushButton(tr("Withdraw"))
         self.withdraw_button.clicked.connect(self._withdraw)
+        self.add_button = QtWidgets.QPushButton(tr("Add parts..."))
+        self.add_button.setToolTip(tr("Copy other parts into this proposal, for example those using a "
+                                      "changed value"))
+        self.add_button.clicked.connect(self._add)
         actions.addWidget(self.comment_button)
         actions.addStretch(1)
+        actions.addWidget(self.add_button)
         for button in (self.withdraw_button, self.refuse_button, self.integrate_button):
             actions.addWidget(button)
         layout.addLayout(actions)
@@ -550,6 +845,7 @@ class ProposalDialog(QtWidgets.QDialog):
         self.integrate_button.setEnabled(is_open and not conflicts)
         self.refuse_button.setVisible(is_open and not author)
         self.withdraw_button.setVisible(is_open and author)
+        self.add_button.setVisible(is_open and author)
         self.open_button.setText(tr("Edit the proposal") if (is_open and author) else tr("Open the proposal"))
         self._update_buttons()
 
@@ -607,6 +903,10 @@ class ProposalDialog(QtWidgets.QDialog):
         if self._run(refuse, self.session, self.proposal, self.comment_box.toPlainText(), self):
             self.comment_box.clear()
         self.refresh()
+
+    def _add(self):
+        if self._run(add_dependents, self.session, self.proposal, self):
+            self.refresh()
 
     def _withdraw(self):
         if self._run(withdraw, self.session, self.proposal, self.comment_box.toPlainText(), self):

@@ -364,8 +364,8 @@ FR = {
         "le fichier proposé n'est pas encore arrivé",
     "Proposal {title}: change the copy of {name}, save it, and the others will see it.":
         "Proposition {title} : modifiez la copie de {name}, enregistrez-la, et les autres la verront.",
-    "Grey: the current part. Green: the proposed one.":
-        "Gris : la pièce actuelle. Vert : la pièce proposée.",
+    "Red edges: the current part. Green: the proposed one.":
+        "Arêtes rouges : la pièce actuelle. Vert : la pièce proposée.",
     "Replace {count} parts by the versions proposed by {user}?\n\nThe current versions are kept in the proposal folder.":
         "Remplacer {count} pièces par les versions proposées par {user} ?\n\nLes versions actuelles sont gardées dans le dossier de la proposition.",
     "Proposal {title} integrated: {count} parts replaced.":
@@ -406,8 +406,8 @@ FR = {
         "Ouvrir la pièce actuelle",
     "Superimpose":
         "Superposer",
-    "Show the current part in grey and the proposed one in green":
-        "Afficher la pièce actuelle en gris et la pièce proposée en vert",
+    "Show the edges of the current part in red over the proposed one in green":
+        "Afficher les arêtes de la pièce actuelle en rouge sur la pièce proposée en vert",
     "Comment":
         "Commenter",
     "Integrate":
@@ -488,6 +488,44 @@ FR = {
         "Masquer",
     "Switch to FreeCAD selection":
         "Passer à la sélection FreeCAD",
+    "Changed values: {name}":
+        "Valeurs modifiées : {name}",
+    "Object":
+        "Objet",
+    "Property":
+        "Propriété",
+    "Current value":
+        "Valeur actuelle",
+    "Proposed value":
+        "Valeur proposée",
+    "No value changed in {name}.":
+        "Aucune valeur modifiée dans {name}.",
+    "Replace {name} by the version proposed by {user}?\n\nThe current version is kept in the proposal folder.":
+        "Remplacer {name} par la version proposée par {user} ?\n\nLa version actuelle est gardée dans le dossier de la proposition.",
+    "Proposal {title} integrated: {name} replaced.":
+        "Proposition {title} intégrée : {name} remplacée.",
+    "uses {values}":
+        "utilise {values}",
+    "uses {name}":
+        "utilise {name}",
+    "Add parts to the proposal":
+        "Ajouter des pièces à la proposition",
+    "Check the parts to copy into the proposal. Those using a value it changes are already checked.":
+        "Cochez les pièces à copier dans la proposition. Celles qui utilisent une valeur qu'elle change sont déjà cochées.",
+    "Recompute and save the added copies":
+        "Recalculer et enregistrer les copies ajoutées",
+    "No other part to add.":
+        "Aucune autre pièce à ajouter.",
+    "Recompute errors in the copy of {name}: {objects}":
+        "Erreurs de recalcul dans la copie de {name} : {objects}",
+    "Parts added to the proposal: {names}.":
+        "Pièces ajoutées à la proposition : {names}.",
+    "Add parts...":
+        "Ajouter des pièces...",
+    "Copy other parts into this proposal, for example those using a changed value":
+        "Copier d'autres pièces dans cette proposition, par exemple celles qui utilisent une valeur modifiée",
+    "Recomputing the copy of {name}...":
+        "Recalcul de la copie de {name}...",
 }
 
 # Other languages live in cobench/translations/<code>.json (English text -> translation).
