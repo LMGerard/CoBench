@@ -33,6 +33,9 @@ on any of them.
   by name or `#tag`, flags broken links, and draws the links between parts. Rename or move a
   part from the panel: every file using it is relinked.
 - **Clean tree.** The files an assembly loads stay out of FreeCAD's tree.
+- **Proposals.** The pull requests of a CAD project: change a copy of one or more parts without
+  locking them; the others see the proposal in the panel, open it read-only, superimpose it on
+  the current part, comment, then integrate or refuse it. See [Proposals](#proposals).
 
 FreeCAD 1.0 or later. Interface in English, French, German, Spanish, Italian, Portuguese, Polish and Chinese (follows the language of FreeCAD).
 
@@ -116,6 +119,38 @@ immediate.
 
 Nothing is written into your FreeCAD documents: the coloured boxes exist only in the
 3D view.
+
+### Proposals
+
+Right-click a part > *Propose a change...*, give a title and a message: CoBench copies the
+part into a proposal **without locking it** and opens the copy. Change it and save it. To change
+several parts together (a plate and the assembly using it), add the next ones to the same
+proposal: the proposed assembly then uses the proposed plate. In the proposal window, *Add
+parts...* lists the parts of the project: after a change in `Variables`, those using a changed
+value are already checked, and their copies are recomputed and saved.
+
+The others see *Proposals (n open)* under the buttons of the panel. A double-click opens the
+proposal: the parts it changes, whether each one can be integrated, the comments. *Open the
+proposal* opens the proposed copy read-only, *Superimpose* shows the edges of the current part in
+red over the proposed one in see-through green, with the table of the changed values. For a
+document without shapes such as `Variables`, *Superimpose* only shows that table (current value,
+proposed value).
+
+*Integrate* only works if no part changed since the proposal was made (same fingerprint as the
+version it started from): FCStd files cannot be merged, so the whole file is replaced. Otherwise
+the part is shown as changed and has to be done again by hand. CoBench then takes the locks,
+replaces the parts, records new versions in the name of the person integrating (citing the
+author), keeps the previous versions, releases the locks and closes the proposal. *Refuse* closes
+it with a comment; the author can *Withdraw* it.
+
+Everything lives in a `cobench-proposals/` folder of the project, one folder per proposal:
+`proposal.json` (written by the author only), the proposed parts in `files/` (named
+`.cobench-fcstd` so that a CoBench without proposals does not take them for parts), one file per
+comment, and `decision.json`, written once. Every file has a single writer, so the sync never
+has to choose between two versions.
+
+![A proposal](docs/images/proposition.png)
+![Superimposed](docs/images/superposition.png)
 
 ## Tests
 

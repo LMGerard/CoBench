@@ -6,7 +6,8 @@ taken by this FreeCAD and, every few seconds, looks at the project folder:
 
 * lock changes of the others (notifications, crossed locks);
 * parts saved by others, reloaded once the file is stable;
-* requests to release a part.
+* requests to release a part;
+* proposals (see proposals.py): new ones, comments, decisions.
 
 It also refuses changes to project files that are not locked by this
 FreeCAD: entering edit mode is stopped before the task panel opens, and any
@@ -24,7 +25,7 @@ import uuid
 import FreeCAD as App
 import FreeCADGui as Gui
 
-from ..core import fcstd, locks, requests, stamps, supabase, syncstate
+from ..core import fcstd, locks, proposals, requests, stamps, supabase, syncstate
 from ..core.identity import Identity
 from ..core.project import Project, find_root
 from ..i18n import tr
@@ -137,6 +138,7 @@ class Session:
         self.locks = locks.LockManager(self.identity, self.session_id, self.app_name)
         self.project = None
         self.parts = []           # project parts found at the last tick
+        self.proposals = []       # core.proposals.Proposal of the project, newest first
         self.states = {}          # part path -> LockState at the last tick
         self.loaded = {}          # normalised path -> mtime when loaded or saved by us
         self.shown = set()        # normalised paths opened on purpose (kept in the tree)
@@ -236,6 +238,7 @@ class Session:
                 App.Console.PrintWarning("CoBench: %s\n" % exc)
         prefs.set_last_project(self.project.root)
         self.states = {}
+        self._proposals_seen = None  # no notification for the proposals already there
         self.use_project_locking()
         self.tick()
         return self.project
@@ -288,6 +291,9 @@ class Session:
     def editable(self, doc):
         """False for a project file this FreeCAD has not locked."""
         path = getattr(doc, "FileName", "")
+        if path and self.project and proposals.is_proposal_path(self.project.root, path):
+            from . import proposals as proposals_gui
+            return proposals_gui.editable(self, path)
         if not path or not self.managed(path):
             return True
         return self.locks.state(path).status == locks.MINE
@@ -853,7 +859,7 @@ class Session:
     def _tick(self):
         project = self.project
         if project is None:
-            self.parts, self.states = [], {}
+            self.parts, self.states, self.proposals = [], {}, []
             return
         self._follow_project_file()
         parts = project.parts()
@@ -869,6 +875,7 @@ class Session:
                 self._last_holder[path] = state.info.user
         self.parts, self.states = parts, states
         self._check_requests(parts, states)
+        self._check_proposals()
         self._reload_changed()
         self._check_lock_sync()
         self._check_waiting()
@@ -913,6 +920,13 @@ class Session:
                 if request.key not in self._requests_seen:
                     self._requests_seen.add(request.key)
                     later(lambda p=path, r=request: self._answer_request(p, r))
+
+    def _check_proposals(self):
+        from . import proposals as proposals_gui
+        try:
+            proposals_gui.scan(self)
+        except OSError as exc:
+            App.Console.PrintWarning("CoBench: %s\n" % exc)
 
     def _answer_request(self, path, request):
         box = QtWidgets.QMessageBox(main_window())
@@ -965,7 +979,10 @@ class Session:
         path = doc.FileName
         name = _stem(path)
         state = self.locks.state(path)
-        if state.status == locks.OTHER:
+        if self.project and proposals.is_proposal_path(self.project.root, path):
+            text = tr("{name} belongs to a proposal: only its author can change it, while it is open.",
+                      name=name)
+        elif state.status == locks.OTHER:
             text = tr("{name} is locked by {who}: it cannot be changed.", name=name, who=who(state.info))
         else:
             text = tr("{name} is not locked: click Edit (CoBench) before changing it.", name=name)

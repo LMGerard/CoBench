@@ -176,6 +176,10 @@ class PartsPanel(QtWidgets.QWidget):
         buttons.addWidget(self.more_button, 2, 1)
         layout.addLayout(buttons)
 
+        from .proposals import ProposalList
+        self.proposal_list = ProposalList(self.session)
+        layout.addWidget(self.proposal_list)
+
         self.activity_toggle = QtWidgets.QToolButton()
         self.activity_toggle.setText(tr("Activity"))
         self.activity_toggle.setCheckable(True)
@@ -230,6 +234,7 @@ class PartsPanel(QtWidgets.QWidget):
         self.user_label.setText(tr("You appear as <b>{user}</b> (<a href='#'>change</a>)",
                                    user=_escape(identity.user)))
         self._refresh_activity()
+        self.proposal_list.refresh()
         if project is None:
             self.title.setText(tr("<b>No project</b><br>Choose a folder holding .FCStd files."))
             self.grid.clear()
@@ -501,6 +506,12 @@ class PartsPanel(QtWidgets.QWidget):
         request = requests.Request.read(path)
         if request is not None and request.status == requests.PENDING:
             lines.append(tr("Requested by {user}", user=_escape(request.user)))
+        target = os.path.normcase(os.path.abspath(path))
+        proposed = [p for p in self.session.proposals if p.is_open and any(
+            os.path.normcase(p.part_path(f)) == target for f in p.files)]
+        if proposed:
+            lines.append(tr("Proposals: {titles}", titles=", ".join(
+                "%s (%s)" % (_escape(p.title or p.id), _escape(p.user)) for p in proposed)))
         author = part.meta.get("LastModifiedBy") or ""
         lines.append(tr("Saved {when}{by}", when=_fmt_time((_mtime(path) or 0) / 1e9),
                         by=(" " + tr("by {user}", user=_escape(author))) if author else ""))
@@ -557,6 +568,8 @@ class PartsPanel(QtWidgets.QWidget):
                 action.setEnabled(button.isEnabled())
                 action.triggered.connect(button.click)
             menu.addSeparator()
+        menu.addAction(tr("Propose a change..."), lambda: self.propose(path))
+        menu.addSeparator()
         menu.addAction(tr("Rename..."), lambda: self.rename(path))
         menu.addAction(tr("Move to folder..."), lambda: self.move(path))
         menu.addAction(tr("Tags..."), lambda: self.edit_tags(path))
@@ -593,6 +606,13 @@ class PartsPanel(QtWidgets.QWidget):
 
     def ask_for(self):
         self._run(self.session.ask_for)
+
+    def propose(self, path):
+        from . import proposals as proposals_gui
+        try:
+            proposals_gui.propose(self.session, path, self)
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(self, "CoBench", str(exc))
 
     def rename(self, path):
         stem = _stem(path)

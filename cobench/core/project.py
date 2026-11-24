@@ -12,6 +12,8 @@ import uuid
 
 from . import fcstd, locks
 
+PROPOSALS_DIR = "cobench-proposals"  # see proposals.py; kept here to avoid a circular import
+
 PROJECT_FILE = "cobench.json"
 PART_EXTENSION = ".fcstd"
 
@@ -129,12 +131,13 @@ class Project:
     def parts(self):
         """Absolute paths of every .FCStd in the folder, sub-folders included.
 
-        Hidden folders (starting with a dot) are skipped, as are conflict
-        copies made by synchronisation clients.
+        Hidden folders (starting with a dot) and the proposals folder are
+        skipped, as are conflict copies made by synchronisation clients.
         """
         found = []
         for folder, dirs, files in os.walk(self.root):
-            dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+            dirs[:] = sorted(d for d in dirs if not d.startswith(".") and not (
+                d == PROPOSALS_DIR and os.path.normcase(folder) == os.path.normcase(self.root)))
             for name in files:
                 if not name.lower().endswith(PART_EXTENSION):
                     continue

@@ -37,6 +37,10 @@ dépend d'aucun d'eux.
   reliés à nouveau.
 - **Arborescence propre.** Les fichiers chargés par un assemblage n'encombrent plus
   l'arborescence de FreeCAD.
+- **Propositions.** Les pull requests d'un projet de CAO : modifiez une copie d'une ou plusieurs
+  pièces sans les verrouiller ; les autres voient la proposition dans le panneau, l'ouvrent en
+  lecture seule, la superposent à la pièce actuelle, la commentent, puis l'intègrent ou la
+  refusent. Voir [Propositions](#propositions).
 
 FreeCAD 1.0 ou plus récent. Interface en français, anglais, allemand, espagnol, italien, portugais, polonais et chinois (suit la langue de FreeCAD).
 
@@ -125,6 +129,39 @@ verrou est immédiat.
 
 Rien n'est écrit dans vos documents FreeCAD : les cadres colorés n'existent que dans la
 vue 3D.
+
+### Propositions
+
+Clic droit sur une pièce > *Proposer une modification...*, un titre et un message : CoBench
+copie la pièce dans une proposition **sans la verrouiller** et ouvre la copie. Modifiez-la et
+enregistrez-la. Pour changer plusieurs pièces ensemble (une plaque et l'assemblage qui
+l'utilise), ajoutez les suivantes à la même proposition : l'assemblage proposé utilise alors la
+plaque proposée. Dans la fenêtre de la proposition, *Ajouter des pièces...* liste les pièces du
+projet : après un changement dans `Variables`, celles qui utilisent une valeur modifiée sont déjà
+cochées, et leurs copies sont recalculées et enregistrées.
+
+Les autres voient *Propositions (n ouvertes)* sous les boutons du panneau. Un double-clic ouvre
+la proposition : les pièces qu'elle change, si chacune peut être intégrée, les commentaires.
+*Ouvrir la proposition* ouvre la copie en lecture seule, *Superposer* montre les arêtes de la
+pièce actuelle en rouge sur la pièce proposée en vert transparent, avec le tableau des valeurs
+modifiées. Pour un document sans formes comme `Variables`, *Superposer* montre seulement ce
+tableau (valeur actuelle, valeur proposée).
+
+*Intégrer* ne marche que si aucune pièce n'a changé depuis la proposition (même empreinte que
+la version de départ) : on ne peut pas fusionner deux FCStd, le fichier entier est remplacé.
+Sinon la pièce est signalée modifiée et la modification est à refaire à la main. CoBench prend
+alors les verrous, remplace les pièces, enregistre de nouvelles versions au nom de celui qui
+intègre (en citant l'auteur), garde les versions précédentes, libère les verrous et ferme la
+proposition. *Refuser* la ferme avec un commentaire ; l'auteur peut la *Retirer*.
+
+Tout est dans un dossier `cobench-proposals/` du projet, un dossier par proposition :
+`proposal.json` (écrit par l'auteur seulement), les pièces proposées dans `files/` (nommées
+`.cobench-fcstd` pour qu'un CoBench sans propositions ne les prenne pas pour des pièces), un
+fichier par commentaire, et `decision.json`, écrit une seule fois. Chaque fichier n'a qu'un
+auteur : la synchronisation n'a jamais à choisir entre deux versions.
+
+![Une proposition](docs/images/proposition.png)
+![Superposition](docs/images/superposition.png)
 
 ## Licence
 
