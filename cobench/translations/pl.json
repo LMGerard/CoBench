@@ -251,5 +251,12 @@
  "integrated": "scalona",
  "refused": "odrzucona",
  "No comment yet.": "Brak komentarzy.",
- "{name} belongs to a proposal: only its author can change it, while it is open.": "{name} należy do propozycji: tylko jej autor może ją zmieniać, dopóki jest otwarta."
+ "{name} belongs to a proposal: only its author can change it, while it is open.": "{name} należy do propozycji: tylko jej autor może ją zmieniać, dopóki jest otwarta.",
+ "CoBench selection in assemblies": "Wybór CoBench w złożeniach",
+ "On: clicking a part of an assembly opens the CoBench menu. Off: FreeCAD's normal selection (several parts, tree, Space to hide)": "Włączone: kliknięcie części złożenia otwiera menu CoBench. Wyłączone: zwykły wybór FreeCAD (wiele części, drzewo, Spacja ukrywa)",
+ "CoBench selection in assemblies: on": "Wybór CoBench w złożeniach: włączony",
+ "CoBench selection in assemblies: off (FreeCAD's normal selection)": "Wybór CoBench w złożeniach: wyłączony (zwykły wybór FreeCAD)",
+ "Show in the tree": "Pokaż w drzewie",
+ "Hide": "Ukryj",
+ "Switch to FreeCAD selection": "Przełącz na wybór FreeCAD"
 }

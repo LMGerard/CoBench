@@ -251,5 +251,12 @@
  "integrated": "übernommen",
  "refused": "abgelehnt",
  "No comment yet.": "Noch kein Kommentar.",
- "{name} belongs to a proposal: only its author can change it, while it is open.": "{name} gehört zu einem Vorschlag: Nur sein Autor kann es ändern, solange er offen ist."
+ "{name} belongs to a proposal: only its author can change it, while it is open.": "{name} gehört zu einem Vorschlag: Nur sein Autor kann es ändern, solange er offen ist.",
+ "CoBench selection in assemblies": "CoBench-Auswahl in Baugruppen",
+ "On: clicking a part of an assembly opens the CoBench menu. Off: FreeCAD's normal selection (several parts, tree, Space to hide)": "An: Ein Klick auf ein Teil einer Baugruppe öffnet das CoBench-Menü. Aus: normale FreeCAD-Auswahl (mehrere Teile, Baumansicht, Leertaste zum Ausblenden)",
+ "CoBench selection in assemblies: on": "CoBench-Auswahl in Baugruppen: an",
+ "CoBench selection in assemblies: off (FreeCAD's normal selection)": "CoBench-Auswahl in Baugruppen: aus (normale FreeCAD-Auswahl)",
+ "Show in the tree": "In der Baumansicht zeigen",
+ "Hide": "Ausblenden",
+ "Switch to FreeCAD selection": "Zur FreeCAD-Auswahl wechseln"
 }

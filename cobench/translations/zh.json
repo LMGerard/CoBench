@@ -251,5 +251,12 @@
  "integrated": "已合并",
  "refused": "已拒绝",
  "No comment yet.": "暂无评论。",
- "{name} belongs to a proposal: only its author can change it, while it is open.": "{name} 属于一个提议：在提议关闭前，只有其作者可以修改。"
+ "{name} belongs to a proposal: only its author can change it, while it is open.": "{name} 属于一个提议：在提议关闭前，只有其作者可以修改。",
+ "CoBench selection in assemblies": "装配体中的 CoBench 选择",
+ "On: clicking a part of an assembly opens the CoBench menu. Off: FreeCAD's normal selection (several parts, tree, Space to hide)": "开启：单击装配体中的零件会打开 CoBench 菜单。关闭：FreeCAD 的常规选择（多个零件、树视图、按空格键隐藏）",
+ "CoBench selection in assemblies: on": "装配体中的 CoBench 选择：开启",
+ "CoBench selection in assemblies: off (FreeCAD's normal selection)": "装配体中的 CoBench 选择：关闭（FreeCAD 常规选择）",
+ "Show in the tree": "在树视图中显示",
+ "Hide": "隐藏",
+ "Switch to FreeCAD selection": "切换到 FreeCAD 选择"
 }

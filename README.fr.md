@@ -15,8 +15,11 @@ dépend d'aucun d'eux.
   n'est pas parvenu aux autres). Dans tout fichier du projet qui contient plusieurs liens vers
   d'autres fichiers et que vous n'avez pas verrouillé (lecture seule), toute la pièce s'éclaire
   au survol et un clic ouvre un petit menu : ouvrir en lecture seule, modifier ou demander, voir
-  dans le panneau. Les faces et arêtes n'y sont pas sélectionnables ; verrouillez le fichier
-  pour les sélectionner à nouveau.
+  dans le panneau ou dans l'arborescence de FreeCAD, masquer. Les faces et arêtes n'y sont pas
+  sélectionnables ; verrouillez le fichier pour les sélectionner à nouveau, ou cliquez sur le
+  bouton *Sélection CoBench* (barre d'outils, ou *Passer à la sélection FreeCAD* dans le petit
+  menu) pour retrouver partout la sélection normale de FreeCAD : plusieurs pièces,
+  arborescence, Espace pour masquer.
 - **Découper en pièces.** Transforme un document qui contient plusieurs corps en un fichier
   par pièce, un `Variables.FCStd` avec tous les VarSets et tableurs (les pièces continuent à
   les lire : changer une cote met tout à jour) et un `Assemblage.FCStd` qui relie les pièces

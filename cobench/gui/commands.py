@@ -257,6 +257,29 @@ class SplitDocument(_Command):
         panel.show_panel()
 
 
+class PickingToggle(_Command):
+    """On: CoBench selection in assemblies (whole parts + small menu).
+    Off: FreeCAD's normal selection (several parts, tree, Space to hide)."""
+    icon = "picking"
+    menu = "CoBench selection in assemblies"
+    tip = ("On: clicking a part of an assembly opens the CoBench menu. "
+           "Off: FreeCAD's normal selection (several parts, tree, Space to hide)")
+
+    def GetResources(self):
+        resources = super().GetResources()
+        resources["Checkable"] = prefs.assembly_picking()
+        return resources
+
+    def IsActive(self):
+        assembly.sync_picking_button()  # follow the option when it is changed elsewhere
+        return True
+
+    def Activated(self, checked=None):
+        start()
+        on = (not prefs.assembly_picking()) if checked is None else bool(checked)
+        _watcher.set_picking(on)
+
+
 class Settings(_Command):
     icon = "user"
     menu = "My name and options..."
@@ -415,6 +438,7 @@ class SettingsDialog(QtWidgets.QDialog):
         prefs.set_protect_files(self.protect.isChecked())
         prefs.set_show_overlay(self.overlay.isChecked())
         prefs.set_assembly_picking(self.picking.isChecked())
+        assembly.sync_picking_button()
         prefs.set_strict(self.strict.isChecked())
         prefs.set_auto_reload(self.reload.isChecked())
         prefs.set_notifications(self.notifications.isChecked())
@@ -441,6 +465,7 @@ COMMANDS = {
     "CoBench_SplitDocument": SplitDocument(),
     "CoBench_ShowGraph": ShowGraph(),
     "CoBench_AskForPart": AskForPart(),
+    "CoBench_Picking": PickingToggle(),
     "CoBench_Settings": Settings(),
 }
 
@@ -448,12 +473,12 @@ COMMANDS = {
 # separate toolbars are clearly apart (and each can be moved).
 TOOLBARS = [
     ("CoBench", ["CoBench_ShowPanel", "CoBench_OpenProject"]),
-    ("CoBench views", ["CoBench_OpenAssembly", "CoBench_ShowGraph"]),
+    ("CoBench views", ["CoBench_OpenAssembly", "CoBench_ShowGraph", "CoBench_Picking"]),
     ("CoBench lock", ["CoBench_Lock"]),
     ("CoBench tools", ["CoBench_SplitDocument"]),
 ]
 MENU = ["CoBench_ShowPanel", "CoBench_OpenProject", "CoBench_OpenAssembly", "CoBench_SetAssembly",
-        "CoBench_ShowGraph", "Separator", "CoBench_EditPart", "CoBench_AskForPart",
+        "CoBench_ShowGraph", "CoBench_Picking", "Separator", "CoBench_EditPart", "CoBench_AskForPart",
         "CoBench_ReleasePart", "CoBench_ReleaseAll",
         "Separator", "CoBench_SplitDocument", "Separator", "CoBench_Settings"]
 
