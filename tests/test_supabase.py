@@ -12,7 +12,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from cobench.core import locks, supabase  # noqa: E402
 from cobench.core.identity import Identity  # noqa: E402
 
-KEYS = {"cobench_locks": ("project", "part"), "cobench_versions": ("project", "part")}
+KEYS = {"cobench_locks": ("project", "part"), "cobench_versions": ("project", "part"),
+        "cobench_projects": ("project",), "cobench_server_files": ("project", "part")}
 
 
 class FakeRest:
@@ -34,6 +35,8 @@ class FakeRest:
         self.calls += 1
         if not self.online:
             raise locks.Offline("no network")
+        if table not in self.tables:  # a database created before this table existed
+            return 404, {"code": "PGRST205", "message": "Could not find the table"}
         rows = self.tables[table]
         where = self._filters(query)
 
@@ -209,3 +212,29 @@ def test_languages_have_the_same_placeholders():
         assert sorted(k for k in cat if k) == sorted(source), code
         for key in source:
             assert set(re.findall(r"\{\w+\}", key)) == set(re.findall(r"\{\w+\}", cat[key])), (code, key)
+
+
+def test_server_copy_is_read_when_the_scanner_writes(tmp_path, rest):
+    alice = manager(tmp_path)
+    assert alice.refresh()
+    assert alice.server_state == "missing"  # older database: the check is simply off
+    alice._server_next = 0  # do not wait SERVER_RETRY seconds
+    rest.tables["cobench_projects"] = []
+    rest.tables["cobench_server_files"] = []
+    alice.refresh_server(now=1000)
+    assert alice.server_state == "none"
+    rest.tables["cobench_projects"].append({"project": "proj1", "files_rev": 1, "min_version": "0.5.0",
+                                            "scanned_at": "2026-11-26T10:00:00+00:00"})
+    rest.tables["cobench_server_files"].append({"project": "proj1", "part": "Pla\u0074e.FCStd", "sha1": "abc",
+                                                "size": 3, "mtime": 1.0})
+    alice.refresh_server(now=2000)
+    state, files, minimum, beat, seen = alice.server_snapshot()
+    assert state == "ok" and minimum == "0.5.0" and seen == 2000
+    assert list(files) == [os.path.normcase("Plate.FCStd")]
+    # Same revision: the files are not read again; a new heartbeat is noticed.
+    calls = rest.calls
+    rest.tables["cobench_projects"][0]["scanned_at"] = "2026-11-26T10:00:20+00:00"
+    alice.refresh_server(now=3000)
+    assert rest.calls == calls + 1 and alice.server_snapshot()[4] == 3000
+    alice.refresh_server(now=3001)  # too soon: nothing asked
+    assert rest.calls == calls + 1

@@ -363,6 +363,107 @@ FR = {
         "Masquer",
     "Switch to FreeCAD selection":
         "Passer à la sélection FreeCAD",
+    # Connection state (core/health.py)
+    'CoBench version':
+        'Version de CoBench',
+    'Lock database':
+        'Base des verrous',
+    'Identity':
+        'Identité',
+    'Connected and up to date':
+        'Connecté et à jour',
+    ' and {count} more':
+        ' et {count} autres',
+    'Server → this computer':
+        'Serveur → ce PC',
+    'This computer → server':
+        'Ce PC → serveur',
+    'Not checked: no copy of the files is watched on the server for this project.':
+        "Non vérifié : aucune copie des fichiers n'est surveillée sur le serveur pour ce projet.",
+    '{count} problems: {problem}':
+        '{count} problèmes : {problem}',
+    'Problem: {problem}':
+        'Problème : {problem}',
+    'Restart FreeCAD.':
+        'Redémarrez FreeCAD.',
+    'Update CoBench (Add-on manager, or git pull in its folder), then restart FreeCAD.':
+        "Mettez CoBench à jour (gestionnaire d'extensions, ou git pull dans son dossier), puis redémarrez FreeCAD.",
+    'CoBench {running} is too old: this project needs {minimum} or newer.':
+        'CoBench {running} est trop ancien : ce projet demande la version {minimum} ou plus récente.',
+    'Lock files next to the parts':
+        'Fichiers de verrou à côté des pièces',
+    'The server stopped reporting its files {minutes} min ago: the sync cannot be checked.':
+        "Le serveur ne donne plus l'état de ses fichiers depuis {minutes} min : la synchro ne peut pas être vérifiée.",
+    'Tell whoever runs the server (cobench_scanner).':
+        'Prévenez la personne qui gère le serveur (cobench_scanner).',
+    'Check the sync client (Nextcloud...) of this computer: is it running, connected, without errors? Restart it if needed.':
+        'Vérifiez le client de synchro (Nextcloud...) de ce PC : est-il lancé, connecté, sans erreur ? Relancez-le si besoin.',
+    'You appear as {user}: choose the name the others see.':
+        'Vous apparaissez comme {user} : choisissez le nom que voient les autres.',
+    'CoBench > My name and options.':
+        'CoBench > Mon nom et options.',
+    '{user} on {host}':
+        '{user} sur {host}',
+    'CoBench {installed} is installed but FreeCAD still runs {running}.':
+        'CoBench {installed} est installé mais FreeCAD utilise encore la {running}.',
+    'Cannot reach the lock database: {error}':
+        'Base des verrous injoignable : {error}',
+    'Check the internet connection of this computer.':
+        'Vérifiez la connexion internet de ce PC.',
+    'Checking...':
+        'Vérification...',
+    'CoBench {latest} is available (you have {running}).':
+        'CoBench {latest} est disponible (vous avez la {running}).',
+    "Check the project's lock settings (cobench.json).":
+        'Vérifiez les réglages des verrous du projet (cobench.json).',
+    'CoBench {running}, up to date':
+        'CoBench {running}, à jour',
+    'CoBench {running}':
+        'CoBench {running}',
+    'Connecting to the lock database...':
+        'Connexion à la base des verrous...',
+    'Connected':
+        'Connectée',
+    '{name} cannot be locked: CoBench is not connected as it should be.':
+        "Impossible de verrouiller {name} : CoBench n'est pas connecté comme il faut.",
+    '{name} is released as soon as the sync client has sent it to the server.':
+        "{name} sera libérée dès que le client de synchro l'aura envoyée sur le serveur.",
+    '{name} stays locked for you.':
+        '{name} reste verrouillée pour vous.',
+    'Fix this first: otherwise you could edit an old copy, or your work could stay on this computer. The CoBench panel shows the state of the connection.':
+        "Réglez d'abord ce problème : sinon vous pourriez modifier une ancienne copie, ou votre travail pourrait rester sur ce PC. Le panneau CoBench montre l'état de la connexion.",
+    '{name} cannot be moved: CoBench is not connected as it should be ({problem}).':
+        "Impossible de déplacer {name} : CoBench n'est pas connecté comme il faut ({problem}).",
+    'CoBench: no project':
+        'CoBench : aucun projet',
+    '{name} has reached the server: released.':
+        '{name} est arrivée sur le serveur : libérée.',
+    "{name} released (the server's copy can no longer be checked).":
+        '{name} libérée (la copie du serveur ne peut plus être vérifiée).',
+    'CoBench is connected as it should be again.':
+        'CoBench est de nouveau connecté comme il faut.',
+    'parts cannot be locked until it is fixed.':
+        "impossible de verrouiller une pièce tant que ce n'est pas réglé.",
+    'being sent to the server (released once it has arrived)':
+        'envoi vers le serveur (libérée dès son arrivée)',
+    'State of the connection: click for details':
+        'État de la connexion : cliquez pour le détail',
+    'Parts cannot be locked until this is fixed.':
+        "Impossible de verrouiller une pièce tant que ce n'est pas réglé.",
+    'Tell me when a new version of CoBench is available':
+        'Me prévenir quand une nouvelle version de CoBench est disponible',
+    '{count} files saved on the server have not arrived here for more than {minutes} min: {names}':
+        '{count} fichiers enregistrés sur le serveur ne sont pas arrivés sur ce PC depuis plus de {minutes} min : {names}',
+    'Receiving {count} files: {names}':
+        'Réception de {count} fichiers : {names}',
+    'Up to date':
+        'À jour',
+    '{count} files changed here have not reached the server for more than {minutes} min: {names}':
+        '{count} fichiers modifiés sur ce PC ne sont pas arrivés sur le serveur depuis plus de {minutes} min : {names}',
+    'Sending {count} files: {names}':
+        'Envoi de {count} fichiers : {names}',
+    'Everything sent':
+        'Tout est envoyé',
 }
 
 # Other languages live in cobench/translations/<code>.json (English text -> translation).

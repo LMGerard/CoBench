@@ -6,7 +6,7 @@ import os
 
 import FreeCADGui as Gui
 
-from ..core import fcstd, locks, requests
+from ..core import fcstd, health, locks, requests
 from ..i18n import tr
 from . import prefs, session as session_mod
 from .qt import Qt, QtCore, QtGui, QtWidgets
@@ -30,6 +30,8 @@ def status_text(state, pending=False):
     if state.status == locks.MINE:
         if pending == "waiting":
             return tr("you are editing (waiting for the last version)")
+        if pending == "releasing":
+            return tr("being sent to the server (released once it has arrived)")
         return tr("you are editing (lock being sent)") if pending else tr("you are editing")
     if state.status == locks.ORPHAN:
         return tr("your old lock (FreeCAD closed)")
@@ -96,6 +98,22 @@ class PartsPanel(QtWidgets.QWidget):
         for button in (self.folder_button, self.assembly_button, self.graph_button, self.refresh_button):
             top.addWidget(button)
         layout.addLayout(top)
+
+        # State of the connection (core/health.py): one line, details on click.
+        self.health_button = QtWidgets.QToolButton()
+        self.health_button.setCheckable(True)
+        self.health_button.setAutoRaise(True)
+        self.health_button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.health_button.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        self.health_button.setToolTip(tr("State of the connection: click for details"))
+        self.health_button.toggled.connect(lambda shown: self.health_details.setVisible(shown))
+        layout.addWidget(self.health_button)
+        self.health_details = QtWidgets.QLabel()
+        self.health_details.setTextFormat(Qt.RichText)
+        self.health_details.setWordWrap(True)
+        self.health_details.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.health_details.hide()
+        layout.addWidget(self.health_details)
 
         self.warning = QtWidgets.QLabel()
         self.warning.setWordWrap(True)
@@ -231,6 +249,7 @@ class PartsPanel(QtWidgets.QWidget):
                                    user=_escape(identity.user)))
         self._refresh_activity()
         if project is None:
+            self._show_health()
             self.title.setText(tr("<b>No project</b><br>Choose a folder holding .FCStd files."))
             self.grid.clear()
             self.tree.clear()
@@ -248,15 +267,39 @@ class PartsPanel(QtWidgets.QWidget):
         self._sync_grid(parts)
         self._sync_tree(parts)
         broken = sum(len(v) for v in self._missing.values())
+        self._show_health()
         problems = []
-        if self.session.store() == "supabase" and self.session.locks.error:
-            problems.append(tr("Lock database: {error}", error=self.session.locks.error))
         if broken:
             problems.append(tr("{count} broken links: a linked file was moved or deleted.", count=broken))
         self.warning.setText("\n".join(problems))
         self.warning.setVisible(bool(problems))
         self._apply_filter()
         self._show_details()
+
+    def _show_health(self):
+        report = self.session.health
+        if report is None:
+            self.health_button.hide()
+            self.health_details.hide()
+            return
+        self.health_button.show()
+        color = session_mod.HEALTH_COLORS[report.level]
+        self.health_button.setText("● " + report.summary())
+        self.health_button.setStyleSheet("QToolButton { color: %s; text-align: left; %s }" % (
+            color, "font-weight: bold;" if report.blocking else ""))
+        if report.blocking and not self.health_button.isChecked():
+            self.health_button.setChecked(True)  # a problem is always shown in full
+        rows = []
+        for check in report.checks:
+            line = "<span style='color:%s'>&#9679;</span> <b>%s</b> — %s" % (
+                session_mod.HEALTH_COLORS[check.level], _escape(check.name), _escape(check.text))
+            if check.fix and check.level in (health.WARNING, health.ERROR):
+                line += "<br>&nbsp;&nbsp;&nbsp;→ <i>%s</i>" % _escape(check.fix)
+            rows.append(line)
+        if report.blocking:
+            rows.append("<b style='color:%s'>%s</b>" % (session_mod.HEALTH_COLORS[health.ERROR], _escape(
+                tr("Parts cannot be locked until this is fixed."))))
+        self.health_details.setText("<br>".join(rows))
 
     def _key(self, path, state):
         """Colour key: the lock status, or PENDING while my lock is not sent yet."""
@@ -267,6 +310,8 @@ class PartsPanel(QtWidgets.QWidget):
     def _text(self, path, state):
         if self._key(path, state) != session_mod.PENDING:
             return status_text(state)
+        if self.session.releasing(path):
+            return status_text(state, "releasing")
         return status_text(state, "waiting" if self.session.waiting_for_file(path) else "sending")
 
     def _label(self, path):

@@ -24,7 +24,8 @@ import uuid
 import FreeCAD as App
 import FreeCADGui as Gui
 
-from ..core import fcstd, locks, requests, stamps, supabase, syncstate
+from .. import __version__
+from ..core import fcstd, health, locks, requests, stamps, supabase, syncstate
 from ..core.identity import Identity
 from ..core.project import Project, find_root
 from ..i18n import tr
@@ -34,6 +35,9 @@ from .qt import QtCore, QtWidgets
 _session = None
 
 PENDING = "pending"   # my lock, not sent by the sync client yet
+
+HEALTH_COLORS = {health.OFF: "#969696", health.OK: "#2ea043", health.WARNING: "#e68c14",
+                 health.ERROR: "#d0342c"}
 
 # Property changes that never need a lock (showing/hiding a part).
 FREE_PROPERTIES = {"Visibility"}
@@ -158,6 +162,12 @@ class Session:
         self._offline_told = set()
         self._waiting = {}        # normalised path -> (path, sha1, size): locked, waiting for the file
         self._store_error = ""
+        self.health = None             # health.Report of the last tick (None: no project)
+        self._collector = health.Collector()
+        self._sync = health.SyncTracker()
+        self._health_told = None       # summary of the last red state told
+        self._releasing = {}           # normalised path -> path: released once the server has my copy
+        self._status_button = None
         self.observer = _DocumentObserver(self)
         App.addDocumentObserver(self.observer)
         self.gui_observer = _GuiObserver(self)
@@ -411,6 +421,10 @@ class Session:
         """Lock the part and open it for editing.  Returns the document or None."""
         name = os.path.basename(path)
         state = self.locks.state(path)
+        if self._releasing.pop(_norm(path), None) and state.status == locks.MINE:
+            status_message(tr("{name} stays locked for you.", name=name))
+        if state.status != locks.MINE and not self.may_lock(name):
+            return None
         if state.status == locks.OTHER:
             box = QtWidgets.QMessageBox(main_window())
             box.setIcon(QtWidgets.QMessageBox.Warning)
@@ -464,6 +478,26 @@ class Session:
         status_message(tr("{name} locked: you can edit it.", name=name))
         self.tick()
         return doc
+
+    def may_lock(self, name):
+        """False (after telling why) while a red check says CoBench is not connected as it should be."""
+        report = self.health
+        if report is None or not report.blocking:
+            return True
+        box = QtWidgets.QMessageBox(main_window())
+        box.setIcon(QtWidgets.QMessageBox.Warning)
+        box.setWindowTitle("CoBench")
+        box.setText(tr("{name} cannot be locked: CoBench is not connected as it should be.", name=name))
+        lines = []
+        for check in report.problems():
+            lines.append("• %s — %s" % (check.name, check.text))
+            if check.fix:
+                lines.append("   → " + check.fix)
+        box.setInformativeText("\n".join(lines) + "\n\n" + tr(
+            "Fix this first: otherwise you could edit an old copy, or your work could stay on this "
+            "computer. The CoBench panel shows the state of the connection."))
+        box.exec()
+        return False
 
     def _store_call(self, method, path):
         """Take or force a lock; None (after telling the user) when the store cannot be used."""
@@ -580,7 +614,7 @@ class Session:
         or (Supabase) while waiting for the last version of the file."""
         if not self.locks.holds(path):
             return False
-        if _norm(path) in self._waiting:
+        if _norm(path) in self._waiting or _norm(path) in self._releasing:
             return True
         if self.store() == "supabase":
             return False  # the database answered: the others see it
@@ -589,6 +623,10 @@ class Session:
 
     def waiting_for_file(self, path):
         return _norm(path) in self._waiting
+
+    def releasing(self, path):
+        """True while my lock waits for the server to have my copy of the part."""
+        return _norm(path) in self._releasing
 
     def _check_lock_sync(self):
         if self.store() != "files":
@@ -678,6 +716,9 @@ class Session:
                    "locked for you (otherwise others could edit an older copy).\n\n{error}",
                    name=name, error=self.locks.error))
             return False
+        if self._release_when_sent(path):
+            self.tick()
+            return True
         try:
             self.locks.release(path)
         except supabase.StoreError as exc:
@@ -689,6 +730,48 @@ class Session:
         status_message(tr("{name} released.", name=name))
         self.tick()
         return True
+
+    def _health_key(self, path):
+        return health.part_key(self.project.rel(path)) if self.project else ""
+
+    def _release_when_sent(self, path):
+        """Keep the lock while the server does not have this computer's copy yet.
+
+        True when the release is put off: it happens by itself once the copy
+        has arrived (``_check_releasing``).  Only when the server's copy is
+        watched (cobench_scanner); otherwise the part is released at once.
+        """
+        report = self.health
+        if report is None or not report.server_ready or not self.project or not self.project.contains(path):
+            return False
+        if report.sent(self._health_key(path)):
+            return False
+        self._releasing[_norm(path)] = path
+        self.notify(tr("{name} is released as soon as the sync client has sent it to the server.",
+                       name=_stem(self.display_name(path))))
+        return True
+
+    def _check_releasing(self):
+        report = self.health
+        for key, path in list(self._releasing.items()):
+            if not self.locks.holds(path):
+                del self._releasing[key]
+                continue
+            if report is not None and report.server_ready and not report.sent(self._health_key(path)):
+                continue
+            del self._releasing[key]
+            name = _stem(self.display_name(path))
+            try:
+                self.locks.release(path)
+            except (locks.Offline, supabase.StoreError) as exc:
+                self.notify(tr("Lock database: {error}", error=str(exc)), warning=True)
+                continue
+            requests.clear(path)
+            if report is not None and report.server_ready:
+                self.notify(tr("{name} has reached the server: released.", name=name))
+            else:
+                self.notify(tr("{name} released (the server's copy can no longer be checked).", name=name),
+                            warning=True)
 
     def display_name(self, path):
         """The file name as written on disk (held paths are lower case on Windows)."""
@@ -703,6 +786,8 @@ class Session:
 
     def take_over(self, path):
         state = self.locks.state(path)
+        if state.status != locks.MINE and not self.may_lock(os.path.basename(path)):
+            return False
         if state.status == locks.OTHER:
             answer = QtWidgets.QMessageBox.warning(
                 main_window(), "CoBench",
@@ -737,6 +822,9 @@ class Session:
         name = os.path.basename(path)
         if os.path.exists(new_path):
             raise RuntimeError(tr("{name} already exists.", name=project.rel(new_path)))
+        if self.health is not None and self.health.blocking:
+            raise RuntimeError(tr("{name} cannot be moved: CoBench is not connected as it should be ({problem}).",
+                                  name=name, problem=self.health.summary()))
         graph = project.link_graph(project.parts())
         users = project.used_in(graph).get(path, [])
         blocked = [p for p in [path] + users if self.locks.state(p).status == locks.OTHER]
@@ -854,6 +942,8 @@ class Session:
         project = self.project
         if project is None:
             self.parts, self.states = [], {}
+            self.health = None
+            self._show_status()
             return
         self._follow_project_file()
         parts = project.parts()
@@ -873,6 +963,78 @@ class Session:
         self._check_lock_sync()
         self._check_waiting()
         self._check_store()
+        self._check_health()
+        self._check_releasing()
+
+    def _check_health(self):
+        """Is everything connected as it should be?  See core/health.py."""
+        project = self.project
+        files = {health.part_key(project.rel(p)): p for p in self.parts}
+        if os.path.isfile(project.project_file):
+            files[health.part_key(health.PROJECT_FILE)] = project.project_file
+        self._collector.start(files, prefs.update_check())
+        display = {key: _stem(path) for key, path in files.items()}
+        display[health.part_key(health.PROJECT_FILE)] = health.PROJECT_FILE
+        store = self.store()
+        values = dict(running=__version__, installed=health.installed_version(), latest=self._collector.latest,
+                      store=store, user=self.identity.user, host=self.identity.host,
+                      user_named=bool(prefs.user_name().strip()), local=self._collector.local, display=display)
+        if store == "supabase":
+            manager = self.locks
+            state, server, minimum, beat, seen = manager.server_snapshot()
+            values.update(store_error=manager.error, store_offline=manager.offline, store_loaded=manager.loaded,
+                          server_state=state, min_version=minimum)
+            if state == "ok" and self._collector.local is not None:
+                values["sync"] = self._sync.compare(self._collector.local, server, manager.version_shas())
+                values["server_age"] = time.monotonic() - seen if seen is not None else None
+                stamp = locks.parse_iso(beat)
+                if stamp is not None:
+                    values["server_clock_age"] = (
+                        datetime.datetime.now(datetime.timezone.utc) - stamp).total_seconds()
+        report = health.evaluate(**values)
+        self.health = report
+        if report.blocking:
+            summary = report.summary()
+            if summary != self._health_told:
+                self._health_told = summary
+                self.notify("%s — %s" % (summary, tr("parts cannot be locked until it is fixed.")), warning=True)
+        elif self._health_told is not None:
+            self._health_told = None
+            self.notify(tr("CoBench is connected as it should be again."))
+        self._show_status()
+
+    def _show_status(self):
+        """A small coloured CoBench mark in FreeCAD's status bar, in every workbench."""
+        window = main_window()
+        if window is None:
+            return
+        button = self._status_button
+        try:
+            if button is not None:
+                button.objectName()  # deleted with its window?
+        except RuntimeError:
+            button = None
+        if button is None:
+            button = QtWidgets.QToolButton()
+            button.setObjectName("CoBenchStatus")
+            button.setAutoRaise(True)
+            button.clicked.connect(_show_panel)
+            window.statusBar().addPermanentWidget(button)
+            self._status_button = button
+        report = self.health
+        if report is None:
+            button.setText("● CoBench")
+            button.setStyleSheet("color: %s;" % HEALTH_COLORS[health.OFF])
+            button.setToolTip(tr("CoBench: no project"))
+            return
+        button.setText("● CoBench")
+        button.setStyleSheet("color: %s; font-weight: %s;" % (
+            HEALTH_COLORS[report.level], "bold" if report.blocking else "normal"))
+        lines = ["CoBench — " + report.summary()]
+        for check in report.checks:
+            if check.level in (health.WARNING, health.ERROR):
+                lines.append("• %s — %s" % (check.name, check.text))
+        button.setToolTip("\n".join(lines))
 
     def _compare(self, path, before, now):
         name = _stem(path)
@@ -1079,8 +1241,9 @@ class Session:
         if not self._quiet:
             self.shown.discard(_norm(path))
         if self.locks.holds(path) and not self._quiet:
-            self.locks.release(path)
-            later(lambda: status_message(tr("{name} released.", name=os.path.basename(path))))
+            if not self._release_when_sent(path):
+                self.locks.release(path)
+                later(lambda: status_message(tr("{name} released.", name=os.path.basename(path))))
         later(self.changed)
 
     def on_saving(self, doc, path):
@@ -1200,6 +1363,11 @@ class _GuiObserver:
             self.session.on_in_edit(view_provider)
         except Exception as exc:
             App.Console.PrintWarning("CoBench: %s\n" % exc)
+
+
+def _show_panel():
+    from . import panel
+    panel.show_panel()
 
 
 def _alive(doc):
