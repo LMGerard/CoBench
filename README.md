@@ -110,6 +110,32 @@ part: if your copy has not arrived through the sync yet, CoBench keeps the part 
 opens it as soon as it is there. Offline, parts can be neither taken nor released (a pending
 release is sent once back online).
 
+**Connection state (0.5).** At the top of the panel, and at the bottom right of FreeCAD in
+every workbench, a green, orange or red dot tells whether CoBench is connected as it should be;
+click it for details and what to do:
+- *CoBench version*: the running version against the minimum the project asks for, the version
+  installed on disk (updated but FreeCAD not restarted) and the latest published one (option
+  *Tell me when a new version of CoBench is available*).
+- *Lock database*: reachable, right key, tables present.
+- *Server → this computer* and *This computer → server*: every part, and `cobench.json`, against
+  the server's copy (see below). A difference is orange for the time of a normal sync, then red
+  after 3 minutes: this computer's sync does not work.
+- *Identity*: the name the others see.
+
+**While a dot is red, CoBench refuses to lock a part**: nobody edits an old copy, or works on a
+computer whose work does not leave. And when the server's copy is watched, *Release* (or closing
+the part) keeps the lock until the sync client has sent the part to the server; it is released
+by itself once it has arrived.
+
+**Watching the server's copy.** `server/cobench_scanner.py` (Python 3, no dependency) runs where
+the files really are, for example on the Nextcloud server, with read-only access to the project
+folder. It writes the fingerprint of every part into the lock database (tables
+`cobench_projects` and `cobench_server_files`, end of `Resources/supabase.sql`; run it once more on
+an existing database). It writes with the *service_role* key, which stays on the server; the
+public key can only read these tables. Settings are at the top of the script;
+`COBENCH_MIN_VERSION` sets the minimum CoBench version for the project. Without it, these two
+lines stay grey (not checked) and nothing is blocked.
+
 **Limit:** with a synchronised folder, two people who open the same part within the
 synchronisation delay will not see each other's lock. On a network share the lock is
 immediate.

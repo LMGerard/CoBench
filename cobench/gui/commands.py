@@ -327,6 +327,9 @@ class SettingsDialog(QtWidgets.QDialog):
         self.offline = QtWidgets.QCheckBox(tr("Refuse to lock a part when this computer is offline"))
         self.offline.setChecked(prefs.offline_check())
         form.addRow(self.offline)
+        self.updates = QtWidgets.QCheckBox(tr("Tell me when a new version of CoBench is available"))
+        self.updates.setChecked(prefs.update_check())
+        form.addRow(self.updates)
         self.delay = QtWidgets.QSpinBox()
         self.delay.setRange(1, 600)
         self.delay.setSuffix(" s")
@@ -444,6 +447,7 @@ class SettingsDialog(QtWidgets.QDialog):
         prefs.set_notifications(self.notifications.isChecked())
         prefs.set_hide_dependencies(self.hide.isChecked())
         prefs.set_offline_check(self.offline.isChecked())
+        prefs.set_update_check(self.updates.isChecked())
         prefs.set_sync_delay(self.delay.value())
         if not self.protect.isChecked() and self.session.project:
             for part in self.session.project.parts():

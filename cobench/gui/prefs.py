@@ -111,6 +111,15 @@ def set_panel_view(value):
     _group().SetString("PanelView", value)
 
 
+def update_check():
+    """Look a few times a day for a newer CoBench on its repository."""
+    return _group().GetBool("UpdateCheck", True)
+
+
+def set_update_check(value):
+    _group().SetBool("UpdateCheck", bool(value))
+
+
 def offline_check():
     """Refuse to take a lock when this computer is offline."""
     return _group().GetBool("OfflineCheck", True)

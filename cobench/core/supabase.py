@@ -17,15 +17,18 @@ import json
 import os
 import ssl
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
 
-from . import locks
+from . import health, locks
 from ..i18n import tr
 from .locks import LockInfo, LockManager, LockState
 
 TIMEOUT = 6
+SERVER_REFRESH = 5        # seconds between two reads of the server's copy (cobench_projects)
+SERVER_RETRY = 60         # seconds before looking again for tables an older database lacks
 SQL_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                         "Resources", "supabase.sql")
 
@@ -84,6 +87,10 @@ class Client:
             raise StoreError(tr("{what}: Supabase error {status} {message}", what=what, status=status,
                                 message=message))
 
+    @staticmethod
+    def missing_table(status, detail):
+        return status == 404 or (isinstance(detail, dict) and detail.get("code") in ("42P01", "PGRST205"))
+
 
 def test_connection(url, key):
     """None when the database is reachable and ready, else a message."""
@@ -137,6 +144,14 @@ class SupabaseLockManager(LockManager):
         self._failed_versions = {}      # rel -> row the database refused (the part is kept)
         self._lock = threading.Lock()
         self._refreshing = False
+        # The copy of the files watched on the server (written by server/cobench_scanner.py).
+        self.server_state = "unknown"   # 'missing' (old database), 'none' (no scanner), 'ok'
+        self.server_files = {}          # health.part_key(part) -> {"part", "sha1", "size", "mtime"}
+        self.min_version = ""           # minimum CoBench version asked by the project
+        self.server_beat = ""           # last heartbeat written by the scanner (database time)
+        self.server_beat_seen = None    # time.monotonic() when that heartbeat last changed
+        self._server_rev = None
+        self._server_next = 0.0
 
     # -- reading -----------------------------------------------------------
     def refresh(self):
@@ -158,7 +173,61 @@ class SupabaseLockManager(LockManager):
             self.rows = {os.path.normcase(str(r.get("part"))): _info_from_row(r) for r in rows or []}
             self.versions = {os.path.normcase(str(v.get("part"))): v for v in versions or []}
             self.loaded, self.offline, self.error = True, False, ""
+        self.refresh_server()
         return True
+
+    def refresh_server(self, now=None):
+        """Read the project's row and, when it changed, the server's copy of the files.
+
+        Never raises: the lock database's own errors are reported by refresh.
+        """
+        now = time.monotonic() if now is None else now
+        if now < self._server_next:
+            return
+        self._server_next = now + SERVER_REFRESH
+        query = "project=eq.%s&select=*" % _quote(self.project_id)
+        try:
+            status, rows = self.client.request("GET", "cobench_projects", query)
+            if self.client.missing_table(status, rows):
+                self.server_state = "missing"
+                self._server_next = now + SERVER_RETRY
+                return
+            self.client.check(status, rows, "cobench_projects")
+            row = rows[0] if isinstance(rows, list) and rows else None
+            if row is None:
+                with self._lock:
+                    self.server_state, self.server_files, self.min_version = "none", {}, ""
+                    self._server_rev = None
+                return
+            files = None
+            if row.get("files_rev") != self._server_rev or self.server_state != "ok":
+                status, items = self.client.request(
+                    "GET", "cobench_server_files",
+                    "project=eq.%s&select=part,sha1,size,mtime" % _quote(self.project_id))
+                self.client.check(status, items, "cobench_server_files")
+                files = {health.part_key(i.get("part", "")): i for i in items or []}
+        except (locks.Offline, StoreError):
+            return
+        beat = str(row.get("scanned_at") or "")
+        with self._lock:
+            if files is not None:
+                self.server_files = files
+                self._server_rev = row.get("files_rev")
+            if beat != self.server_beat or self.server_beat_seen is None:
+                self.server_beat, self.server_beat_seen = beat, now
+            self.min_version = str(row.get("min_version") or "")
+            self.server_state = "ok"
+
+    def server_snapshot(self):
+        """(state, files, min_version, heartbeat, monotonic time it was seen), read together."""
+        with self._lock:
+            return (self.server_state, dict(self.server_files), self.min_version, self.server_beat,
+                    self.server_beat_seen)
+
+    def version_shas(self):
+        """{health.part_key(part): sha1 of the last version recorded}."""
+        with self._lock:
+            return {health.part_key(v.get("part", "")): str(v.get("sha1") or "") for v in self.versions.values()}
 
     def refresh_async(self):
         if self._refreshing:

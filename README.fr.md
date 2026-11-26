@@ -119,6 +119,32 @@ chaque pièce : si votre copie n'est pas encore arrivée par la synchro, CoBench
 pour vous et l'ouvre dès qu'elle est là. Hors ligne, on ne peut ni prendre ni rendre une pièce
 (un rendu en attente part au retour de la connexion).
 
+**État de la connexion (0.5).** En haut du panneau, et en bas à droite de FreeCAD dans tous
+les ateliers, un point vert, orange ou rouge dit si CoBench est connecté comme il faut ; un clic
+donne le détail et quoi faire :
+- *Version de CoBench* : la version qui tourne, comparée à la version minimale demandée par le
+  projet, à celle installée sur le disque (mise à jour mais FreeCAD pas redémarré) et à la
+  dernière publiée (option *Me prévenir quand une nouvelle version est disponible*).
+- *Base des verrous* : joignable, bonne clé, tables présentes.
+- *Serveur → ce PC* et *Ce PC → serveur* : chaque pièce, et `cobench.json`, comparées à la copie
+  du serveur (voir ci-dessous). Une différence est orange le temps d'une synchro normale, puis
+  rouge au-delà de 3 minutes : la synchro de ce PC ne passe pas.
+- *Identité* : le nom que voient les autres.
+
+**Tant qu'un point est rouge, CoBench refuse de verrouiller une pièce** : on ne peut pas modifier
+une ancienne copie, ni travailler sur un PC dont le travail ne part pas. Et quand la copie du
+serveur est surveillée, *Libérer* (ou fermer la pièce) garde le verrou tant que le client de
+synchro n'a pas envoyé la pièce sur le serveur ; elle est libérée toute seule à son arrivée.
+
+**Surveiller la copie du serveur.** `server/cobench_scanner.py` (Python 3, sans dépendance) tourne
+là où sont vraiment les fichiers, par exemple sur le serveur Nextcloud, avec un accès en lecture
+seule au dossier du projet. Il écrit l'empreinte de chaque pièce dans la base des verrous (tables
+`cobench_projects` et `cobench_server_files`, fin de `Resources/supabase.sql`, à exécuter une fois
+de plus sur une base existante). Il écrit avec la clé *service_role*, qui reste sur le serveur ;
+la clé publique ne peut que lire ces tables. Réglages en tête du script ; `COBENCH_MIN_VERSION`
+fixe la version minimale de CoBench pour le projet. Sans lui, ces deux lignes restent grises
+(non vérifié) et rien n'est bloqué.
+
 **Limite :** avec un dossier synchronisé, deux personnes qui ouvrent la même pièce dans le
 délai de synchronisation ne verront pas le verrou de l'autre. Sur un partage réseau, le
 verrou est immédiat.

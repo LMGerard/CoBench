@@ -50,3 +50,42 @@ create policy cobench_versions_all on public.cobench_versions
 
 grant select, insert, update, delete on public.cobench_locks    to anon, authenticated;
 grant select, insert, update, delete on public.cobench_versions to anon, authenticated;
+
+-- Optional (CoBench 0.5): the copy of the files watched on the server.
+-- server/cobench_scanner.py runs next to the reference copy of the project (for example on the
+-- Nextcloud server) and writes the fingerprint of every part here; each FreeCAD compares it with
+-- its own copy to tell a part that does not arrive, or does not leave, through the sync.
+-- Running this part again on an existing database is safe.
+create table if not exists public.cobench_projects (
+    project     text        primary key,
+    min_version text        not null default '',  -- older CoBench versions may not lock parts
+    files_rev   bigint      not null default 0,   -- increased by the scanner when a file changes
+    scanned_at  timestamptz,                      -- heartbeat of the scanner
+    scanner     text        not null default ''
+);
+
+create table if not exists public.cobench_server_files (
+    project text        not null,
+    part    text        not null,                 -- path inside the project, as on the server
+    sha1    text        not null,
+    size    bigint      not null default 0,
+    mtime   double precision not null default 0,  -- seconds since 1970 on the server
+    primary key (project, part)
+);
+
+-- Everybody reads; only the scanner writes, with the service_role key (never put it in cobench.json).
+alter table public.cobench_projects     enable row level security;
+alter table public.cobench_server_files enable row level security;
+
+drop policy if exists cobench_projects_read on public.cobench_projects;
+create policy cobench_projects_read on public.cobench_projects
+    for select to anon, authenticated using (true);
+
+drop policy if exists cobench_server_files_read on public.cobench_server_files;
+create policy cobench_server_files_read on public.cobench_server_files
+    for select to anon, authenticated using (true);
+
+grant select on public.cobench_projects     to anon, authenticated;
+grant select on public.cobench_server_files to anon, authenticated;
+grant select, insert, update, delete on public.cobench_projects     to service_role;
+grant select, insert, update, delete on public.cobench_server_files to service_role;
